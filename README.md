@@ -238,6 +238,7 @@ cargo run --bin smoke        # 完整冒烟（额外覆盖本地 PTY 终端与 S
 |------|------|
 | 前端类型检查 + 生产构建（`pnpm build`） | ✅ 通过（`tsc --noEmit` + vite 产物 620 kB / gzip 174 kB） |
 | 后端全部模块编译（`tools/verify` 复用真实源码 + 真实 russh / russh-sftp / portable-pty / reqwest） | ✅ 通过，无错误无警告 |
+| 前后端 IPC 契约（35 个命令的命令名 / 参数名 / 注册表） | ✅ 通过（`python scripts/check_contract.py`） |
 | 同步服务端编译 | ✅ 通过 |
 | 同步服务端运行 + 接口联调（注册 / 登录 / 密码错误 / 上传 / 拉取 / 版本冲突 409 / 重复注册 409） | ✅ 全部符合预期 |
 | `tauri dev` / `tauri build` 桌面窗口 | ⚠️ 交付环境缺少 MSVC C++ 工具链，无法在此机器完成最终打包，需在装有 VS Build Tools 的机器上执行 |
