@@ -1,0 +1,27 @@
+services:
+  tomatossh-sync:
+    build: .
+    image: tomatossh-sync:0.1.0
+    container_name: tomatossh-sync
+    restart: unless-stopped
+    ports:
+      - "8787:8787"
+    environment:
+      BIND_ADDR: 0.0.0.0:8787
+      DATABASE_PATH: /data/tomatossh.db
+      JWT_SECRET: ${JWT_SECRET:?请先在 .env 中设置 JWT_SECRET（可用 openssl rand -hex 32 生成）}
+      ALLOW_REGISTER: ${ALLOW_REGISTER:-true}
+      TOKEN_TTL_HOURS: ${TOKEN_TTL_HOURS:-720}
+      MAX_BLOB_BYTES: ${MAX_BLOB_BYTES:-16777216}
+      RUST_LOG: ${RUST_LOG:-tomatossh_sync=info,tower_http=warn}
+    volumes:
+      - tomatossh-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8787/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  tomatossh-data:

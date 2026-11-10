@@ -1,0 +1,12 @@
+[package]
+name = "tauri-plugin-dialog"
+version = "2.8.4"
+edition = "2021"
+
+[lib]
+name = "tauri_plugin_dialog"
+path = "src/lib.rs"
+
+[dependencies]
+
+[workspace]

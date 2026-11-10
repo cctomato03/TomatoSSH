@@ -1,0 +1,27 @@
+[package]
+name = "tomatossh-sync"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.82"
+description = "TomatoSSH 云同步服务（自建账号 + 加密保险库存储）"
+license = "MIT"
+
+[[bin]]
+name = "tomatossh-sync"
+path = "src/main.rs"
+
+[dependencies]
+axum = "0.8"
+tokio = { version = "1", features = ["full"] }
+tower-http = { version = "0.6", features = ["trace", "cors"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+rusqlite = { version = "0.37", features = ["bundled"] }
+argon2 = "0.5"
+password-hash = { version = "0.5", features = ["rand_core"] }
+hmac = "0.12"
+sha2 = "0.10"
+base64 = "0.22"
+rand = "0.8"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }

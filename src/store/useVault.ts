@@ -1,0 +1,116 @@
+import { create } from "zustand";
+import { api } from "../lib/api";
+import { applyThemeVars, getTheme, DEFAULT_THEME_ID } from "../lib/themes";
+import type { AppSettings, GroupRecord, HostDraft, HostRecord } from "../lib/types";
+
+export const DEFAULT_SETTINGS: AppSettings = {
+  theme: DEFAULT_THEME_ID,
+  fontFamily: "JetBrains Mono, Fira Code, Cascadia Code, Menlo, Consolas, monospace",
+  fontSize: 14,
+  lineHeight: 1.25,
+  cursorBlink: true,
+  scrollback: 8000,
+  copyOnSelect: false,
+  sync: { serverUrl: "", email: "", autoSync: false, lastSyncAt: null },
+};
+
+interface VaultState {
+  loaded: boolean;
+  loading: boolean;
+  error: string | null;
+  hosts: HostRecord[];
+  groups: GroupRecord[];
+  settings: AppSettings;
+  load: () => Promise<void>;
+  saveHost: (draft: HostDraft) => Promise<HostRecord>;
+  deleteHost: (id: string) => Promise<void>;
+  saveGroup: (draft: Partial<GroupRecord> & { name: string }) => Promise<GroupRecord>;
+  deleteGroup: (id: string) => Promise<void>;
+  updateSettings: (patch: Partial<AppSettings>) => void;
+  /** 云同步后重新拉取整库 */
+  refreshFromServer: () => Promise<void>;
+}
+
+let persistTimer: number | undefined;
+
+export const useVault = create<VaultState>((set, get) => ({
+  loaded: false,
+  loading: false,
+  error: null,
+  hosts: [],
+  groups: [],
+  settings: DEFAULT_SETTINGS,
+
+  async load() {
+    set({ loading: true, error: null });
+    try {
+      const snap = await api.loadVault();
+      const settings: AppSettings = {
+        ...DEFAULT_SETTINGS,
+        ...snap.settings,
+        sync: { ...DEFAULT_SETTINGS.sync, ...(snap.settings?.sync ?? {}) },
+      };
+      applyThemeVars(getTheme(settings.theme));
+      set({ hosts: snap.hosts, groups: snap.groups, settings, loaded: true, loading: false });
+    } catch (e) {
+      set({ error: String(e), loading: false, loaded: true });
+    }
+  },
+
+  async saveHost(draft) {
+    const saved = await api.hostSave(draft);
+    set((s) => {
+      const idx = s.hosts.findIndex((h) => h.id === saved.id);
+      const hosts = idx >= 0 ? s.hosts.map((h) => (h.id === saved.id ? saved : h)) : [...s.hosts, saved];
+      return { hosts };
+    });
+    return saved;
+  },
+
+  async deleteHost(id) {
+    await api.hostDelete(id);
+    set((s) => ({ hosts: s.hosts.filter((h) => h.id !== id) }));
+  },
+
+  async saveGroup(draft) {
+    const saved = await api.groupSave(draft);
+    set((s) => {
+      const idx = s.groups.findIndex((g) => g.id === saved.id);
+      const groups = idx >= 0 ? s.groups.map((g) => (g.id === saved.id ? saved : g)) : [...s.groups, saved];
+      return { groups };
+    });
+    return saved;
+  },
+
+  async deleteGroup(id) {
+    await api.groupDelete(id);
+    // 删除分组后，其子分组与主机被上移到根
+    set((s) => ({
+      groups: s.groups
+        .filter((g) => g.id !== id)
+        .map((g) => (g.parentId === id ? { ...g, parentId: null } : g)),
+      hosts: s.hosts.map((h) => (h.groupId === id ? { ...h, groupId: null } : h)),
+    }));
+  },
+
+  updateSettings(patch) {
+    const next: AppSettings = { ...get().settings, ...patch };
+    set({ settings: next });
+    if (patch.theme) applyThemeVars(getTheme(next.theme));
+    window.clearTimeout(persistTimer);
+    persistTimer = window.setTimeout(() => {
+      api.settingsSave(next).catch((e) => console.error("保存设置失败", e));
+    }, 250);
+  },
+
+  async refreshFromServer() {
+    const snap = await api.loadVault();
+    const settings: AppSettings = {
+      ...DEFAULT_SETTINGS,
+      ...snap.settings,
+      sync: { ...DEFAULT_SETTINGS.sync, ...(snap.settings?.sync ?? {}) },
+    };
+    applyThemeVars(getTheme(settings.theme));
+    set({ hosts: snap.hosts, groups: snap.groups, settings });
+  },
+}));
