@@ -339,6 +339,11 @@ pub async fn open_file_manager(app: AppHandle, host_id: Option<String>) -> Resul
     Ok(())
 }
 
+#[tauri::command]
+pub fn app_version() -> Result<String> {
+    Ok(env!("CARGO_PKG_VERSION").to_string())
+}
+
 // ---------------------------------------------------------------- 传输队列（后台常驻）
 
 #[tauri::command]

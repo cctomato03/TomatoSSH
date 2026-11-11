@@ -74,6 +74,9 @@ export const api = {
   openFileManager: (hostId?: string | null) =>
     call<void>("open_file_manager", { hostId: hostId ?? null }),
 
+  /** 当前 App 版本（用于和 git tag 核对） */
+  appVersion: () => call<string>("app_version"),
+
   // ---------- 后台传输队列 ----------
   enqueueTransfers: (jobs: EnqueueJob[]) => call<TransferJob[]>("enqueue_transfers", { jobs }),
   listTransfers: () => call<TransferJob[]>("list_transfers"),

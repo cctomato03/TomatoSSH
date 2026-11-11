@@ -142,7 +142,32 @@ Tauri 打包 MSI/NSIS 时会从 GitHub 下载 WiX 与 NSIS 工具链，多数国
 | 编译都跑完了，最后一步报 `Error: Resource not accessible by integration`（`create-a-release`） | `GITHUB_TOKEN` 默认只读，工作流没有声明写权限 | workflow 顶部加 `permissions: { contents: write }`；若仍失败，去 Settings → Actions → General → Workflow permissions 选 "Read and write permissions" |
 | `unable to parse JSON Tauri config file ... expected value at line 1 column 1` | `tauri.conf.json` 带了 **UTF-8 BOM**（Windows 上用 PowerShell `Set-Content -Encoding UTF8` 会写入 BOM） | 用无 BOM 的 UTF-8 保存；本仓库已清理 |
 | Linux 打包缺 `webkit2gtk` / appindicator | 依赖名在 22.04 应为 `libwebkit2gtk-4.1-dev`、`libayatana-appindicator3-dev` | 见 workflow 的「安装 Linux 打包依赖」步骤 |
-| tag 是 `v1.0.1` 但安装包叫 `1.0.0` | `tauri.conf.json` 的 `version` 与 tag 不一致 | 发版时同步改 `package.json` / `src-tauri/Cargo.toml` / `src-tauri/tauri.conf.json` 三处版本号 |
+| tag 是 `v1.0.1` 但安装包叫 `1.0.0` | `tauri.conf.json` 的 `version` 与 tag 不一致 | 现在由 workflow 的「版本号对齐 git tag」步骤自动同步（`node scripts/set-version.mjs`）；本地发版手动跑一次同样命令即可 |
+
+
+### 版本号：跟 git tag 保持一致
+
+App / 安装包里的版本号**只认一个来源**：`src-tauri/tauri.conf.json` 的 `version`
+（Windows 的 `FileVersion`/`ProductVersion`、MSI/NSIS 安装包文件名、macOS 的 CFBundleShortVersionString 都由它生成；
+`package.json`、`src-tauri/Cargo.toml`、`Cargo.lock` 需要与它一致）。
+
+CI 里由 tag 自动驱动，不需要手动改版本号（`.github/workflows/build.yml` → 「版本号对齐 git tag」步骤）：
+
+```yaml
+VERSION="${GITHUB_REF_NAME#v}"      # tag v1.2.1 → 1.2.1
+node scripts/set-version.mjs "$VERSION"
+```
+
+本地发版也可用同一个脚本一次改四处：
+
+```bash
+node scripts/set-version.mjs 1.2.2
+python scripts/print-version.py     # 核对四个文件是否一致
+```
+
+想确认已装版本：设置面板底部会显示 `TomatoSSH vX.Y.Z`（读自 `CARGO_PKG_VERSION`，与上面同步）；
+也可以在 Windows 上右键 exe → 属性 → 详细信息查看「文件版本」。
+
 
 
 ### 常用脚本
@@ -152,6 +177,8 @@ pnpm typecheck                     # 前端类型检查
 pnpm build                         # 类型检查 + 生产构建
 cd src-tauri && cargo check        # 后端编译检查
 cd server && cargo run             # 本地启动同步服务（默认 0.0.0.0:8787）
+node scripts/set-version.mjs 1.2.2 # 同步四处版本号（含 tauri.conf.json）
+python scripts/print-version.py    # 打印四处版本号核对
 ```
 
 ---
@@ -168,7 +195,8 @@ cd server && cargo run             # 本地启动同步服务（默认 0.0.0.0:8
    - 底部是**后台传输队列**：单目录内 4 路并发，先显示「扫描文件夹…」再传，进度按字节汇总；上传/下载会**保留原文件的修改时间与权限**；
    - 点中间按钮只是**把任务加入队列**，真正的传输跑在 Rust 侧后台任务里 —— **关掉文件管理窗口也不会中断**；
    - 队列持久化到 `transfer-queue.json`，**App 重启后未完成的任务会自动重新排队并断点续传**；
-   - 每个文件失败自动重试 3 次（指数退避），重试时**从断点续传**而非从头开始；整个任务失败还会重排 1 次；队列里可随时「取消 / 重试 / 清理已完成」。
+   - 每个文件失败自动重试 3 次（指数退避），重试时**从断点续传**而非从头开始；整个任务失败还会重排 1 次；队列里可随时「取消 / 重试 / 清理已完成」；
+   - 成功的任务会在列表里**停留 4 秒后自动消失**（失败/取消的会保留，方便重试）；「清理已完成」以 Rust 侧队列为准，不会残留幽灵条目。
 5. **本地终端**：侧边栏「本地终端」或标签栏 `+`。
 6. **设置**：右上角齿轮 → 主题 / 字体 / 字号 / 行高 / 回滚缓冲 / 光标闪烁，改动对所有已打开终端立即生效。
 7. **云同步**：右上角云图标 → 填服务器地址 + 邮箱 + 密码 → 注册或登录 → 「立即双向同步」。

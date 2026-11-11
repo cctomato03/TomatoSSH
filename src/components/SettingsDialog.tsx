@@ -1,4 +1,6 @@
+import { useEffect, useState } from "react";
 import { Palette, RotateCcw, Type } from "lucide-react";
+import { api } from "../lib/api";
 import { THEMES, getTheme } from "../lib/themes";
 import { DEFAULT_SETTINGS, useVault } from "../store/useVault";
 import { useUi } from "../store/useUi";
@@ -19,6 +21,15 @@ export function SettingsDialog() {
   const setOpen = useUi((s) => s.setSettingsOpen);
   const settings = useVault((s) => s.settings);
   const update = useVault((s) => s.updateSettings);
+  const [version, setVersion] = useState("");
+
+  useEffect(() => {
+    if (!open) return;
+    api
+      .appVersion()
+      .then(setVersion)
+      .catch(() => undefined);
+  }, [open]);
 
   if (!open) return null;
   const close = () => setOpen(false);
@@ -138,6 +149,10 @@ export function SettingsDialog() {
       <div className="hint">
         提示：终端内可用 <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>C</kbd> 复制、
         <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>V</kbd> 粘贴；字号与主题改动会立即应用到所有已打开的终端。
+      </div>
+
+      <div className="hint" style={{ opacity: 0.7 }}>
+        TomatoSSH {version ? `v${version}` : ""} · 版本号由 git tag 决定（CI 打包时自动同步）
       </div>
     </Modal>
   );

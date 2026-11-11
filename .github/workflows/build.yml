@@ -38,6 +38,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # 版本号跟 git tag 走：tag v1.2.1 → 应用/安装包版本 1.2.1
+      - name: 版本号对齐 git tag
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF_NAME#v}"
+          echo "本次构建版本: $VERSION"
+          node scripts/set-version.mjs "$VERSION"
+
       # Ubuntu 下 Tauri 需要的系统依赖（22.04 用 ayatana 版 appindicator）
       - name: 安装 Linux 打包依赖
         if: matrix.platform == 'ubuntu-22.04'

@@ -81,6 +81,7 @@ pub fn run() {
             commands::cancel_transfer,
             commands::retry_transfer,
             commands::clear_finished_transfers,
+            commands::app_version,
             commands::sync_state,
             commands::sync_login,
             commands::sync_register,

@@ -271,6 +271,18 @@ export function FileManager() {
     setter((prev) => ({ ...prev, ...patch }));
   }, []);
 
+  /**
+   * 队列里的任务按 id 去重写入。
+   * 之前 enqueue 的返回值 + 后端推来的 transfer-job 事件会各插一次，
+   * 导致同一个任务出现两条（一条跟着事件更新、一条永远停在 0%）。
+   */
+  const upsertJob = useCallback((job: TransferJob) => {
+    setJobs((prev) => {
+      const rest = prev.filter((j) => j.id !== job.id);
+      return [...rest, job];
+    });
+  }, []);
+
   const load = useCallback(
     async (side: Side, override?: Partial<Pane>) => {
       const pane: Pane = { ...getPane(side), ...(override ?? {}) };
@@ -340,28 +352,36 @@ export function FileManager() {
   // 订阅后台传输队列
   useEffect(() => {
     let un: (() => void) | undefined;
+    const timers = new Map<string, number>();
     onTransferJob((job) => {
-      setJobs((prev) => {
-        const idx = prev.findIndex((j) => j.id === job.id);
-        if (idx >= 0) {
-          const next = [...prev];
-          next[idx] = job;
-          return next;
-        }
-        return [...prev, job];
-      });
+      upsertJob(job);
       // 任务结束/失败时刷新两侧列表（新文件已落地）
       if (job.status === "done" || job.status === "error") {
         void load("left");
         void load("right");
+      }
+      // 成功的任务在列表里停留 4 秒后自动移除（失败/取消的保留，方便重试）
+      if (job.status === "done") {
+        const old = timers.get(job.id);
+        if (old) window.clearTimeout(old);
+        timers.set(
+          job.id,
+          window.setTimeout(() => {
+            setJobs((prev) => prev.filter((j) => j.id !== job.id));
+            timers.delete(job.id);
+          }, 4000),
+        );
       }
     })
       .then((u) => {
         un = u;
       })
       .catch(() => undefined);
-    return () => un?.();
-  }, [load]);
+    return () => {
+      un?.();
+      timers.forEach((t) => window.clearTimeout(t));
+    };
+  }, [load, upsertJob]);
 
   const select = (side: Side, name: string, e: React.MouseEvent) => {
     const pane = getPane(side);
@@ -458,7 +478,7 @@ export function FileManager() {
 
     try {
       const created = await api.enqueueTransfers(enqueued);
-      setJobs((prev) => [...prev, ...created]);
+      created.forEach(upsertJob);
       setPane(from, { selected: new Set() });
       setToast(`已加入队列：${created.length} 项（后台传输，可关闭本窗口）`);
     } catch (e) {
@@ -535,9 +555,11 @@ export function FileManager() {
             api.retryTransfer(id).catch((e) => setToast(String(e)));
           }}
           onClear={() => {
+            // 以 Rust 侧队列为准，避免本地残留"幽灵"记录
             api
               .clearFinishedTransfers()
-              .then(() => setJobs((prev) => prev.filter((j) => j.status === "running" || j.status === "pending")))
+              .then(() => api.listTransfers())
+              .then((list) => setJobs(list))
               .catch((e) => setToast(String(e)));
           }}
         />
