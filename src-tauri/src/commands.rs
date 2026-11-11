@@ -1,4 +1,4 @@
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use tauri::{AppHandle, State};
 
@@ -6,6 +6,7 @@ use crate::error::{Error, Result};
 use crate::local::LocalManager;
 use crate::localfs;
 use crate::models::*;
+use crate::queue::{EnqueueJob, TransferJob, TransferQueue};
 use crate::sftp::SftpManager;
 use crate::ssh::SshManager;
 use crate::sync;
@@ -13,19 +14,27 @@ use crate::vault::VaultStore;
 use crate::{crypto, vault::SyncPayload};
 
 pub struct AppState {
-    pub vault: Mutex<VaultStore>,
-    pub ssh: SshManager,
-    pub sftp: SftpManager,
-    pub local: LocalManager,
+    pub vault: Arc<Mutex<VaultStore>>,
+    pub ssh: Arc<SshManager>,
+    pub sftp: Arc<SftpManager>,
+    pub local: Arc<LocalManager>,
+    pub queue: Arc<TransferQueue>,
 }
 
 impl AppState {
-    pub fn new(vault: VaultStore) -> Self {
+    pub fn new(
+        vault: Arc<Mutex<VaultStore>>,
+        ssh: Arc<SshManager>,
+        sftp: Arc<SftpManager>,
+        local: Arc<LocalManager>,
+        queue: Arc<TransferQueue>,
+    ) -> Self {
         Self {
-            vault: Mutex::new(vault),
-            ssh: SshManager::default(),
-            sftp: SftpManager::default(),
-            local: LocalManager::default(),
+            vault,
+            ssh,
+            sftp,
+            local,
+            queue,
         }
     }
 }
@@ -327,6 +336,36 @@ pub async fn open_file_manager(app: AppHandle, host_id: Option<String>) -> Resul
         .min_inner_size(760.0, 480.0)
         .build()
         .map_err(|e| Error::msg(format!("打开文件管理器窗口失败：{e}")))?;
+    Ok(())
+}
+
+// ---------------------------------------------------------------- 传输队列（后台常驻）
+
+#[tauri::command]
+pub fn enqueue_transfers(state: State<'_, AppState>, jobs: Vec<EnqueueJob>) -> Result<Vec<TransferJob>> {
+    Ok(state.queue.enqueue(jobs))
+}
+
+#[tauri::command]
+pub fn list_transfers(state: State<'_, AppState>) -> Result<Vec<TransferJob>> {
+    Ok(state.queue.list())
+}
+
+#[tauri::command]
+pub fn cancel_transfer(state: State<'_, AppState>, id: String) -> Result<()> {
+    state.queue.cancel(&id);
+    Ok(())
+}
+
+#[tauri::command]
+pub fn retry_transfer(state: State<'_, AppState>, id: String) -> Result<()> {
+    state.queue.retry(&id);
+    Ok(())
+}
+
+#[tauri::command]
+pub fn clear_finished_transfers(state: State<'_, AppState>) -> Result<()> {
+    state.queue.clear_finished();
     Ok(())
 }
 

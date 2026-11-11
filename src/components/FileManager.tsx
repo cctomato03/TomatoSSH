@@ -8,13 +8,15 @@ import {
   Laptop,
   Pencil,
   RefreshCw,
+  RotateCcw,
   Server,
   Trash2,
   X,
+  XCircle,
 } from "lucide-react";
-import { api, onTransferProgress } from "../lib/api";
+import { api, onTransferJob } from "../lib/api";
 import { formatSize, formatTime, joinPath, parentPath } from "../lib/paths";
-import type { FileEntry, HostRecord, TransferProgress } from "../lib/types";
+import type { EnqueueJob, FileEntry, HostRecord, TransferJob } from "../lib/types";
 import { useVault } from "../store/useVault";
 
 type Side = "left" | "right";
@@ -42,23 +44,20 @@ const emptyPane = (kind: "local" | "remote"): Pane => ({
   error: null,
 });
 
-/** 最多 limit 路并发执行 */
-async function runPool(jobs: Array<() => Promise<void>>, limit: number): Promise<string[]> {
-  let cursor = 0;
-  const errors: string[] = [];
-  const worker = async () => {
-    while (cursor < jobs.length) {
-      const idx = cursor++;
-      try {
-        await jobs[idx]();
-      } catch (e) {
-        errors.push(String(e));
-      }
-    }
-  };
-  await Promise.all(Array.from({ length: Math.min(limit, jobs.length) }, () => worker()));
-  return errors;
-}
+const STATUS_TEXT: Record<TransferJob["status"], string> = {
+  pending: "排队中",
+  running: "传输中",
+  done: "完成",
+  error: "失败",
+  canceled: "已取消",
+};
+
+const KIND_ICON: Record<string, string> = {
+  upload: "⤴",
+  download: "⤵",
+  remoteToRemote: "⇄",
+  localToLocal: "→",
+};
 
 interface PaneViewProps {
   pane: Pane;
@@ -77,7 +76,6 @@ interface PaneViewProps {
 function PaneView(p: PaneViewProps) {
   const [draft, setDraft] = useState(p.pane.path);
   useEffect(() => setDraft(p.pane.path), [p.pane.path]);
-
   const selectedHost = p.hosts.find((h) => h.id === p.pane.hostId);
 
   return (
@@ -129,11 +127,7 @@ function PaneView(p: PaneViewProps) {
         )}
       </div>
 
-      {p.pane.error && (
-        <div className="fm-error" onClick={() => p.onRefresh()}>
-          {p.pane.error}
-        </div>
-      )}
+      {p.pane.error && <div className="fm-error">{p.pane.error}</div>}
 
       <div className="fm-list">
         {p.pane.loading && p.pane.entries.length === 0 && <div className="fm-empty">加载中…</div>}
@@ -188,38 +182,69 @@ function PaneView(p: PaneViewProps) {
   );
 }
 
-function TransferList({ items }: { items: TransferProgress[] }) {
-  if (items.length === 0) return <div className="fm-note">传输进度会显示在这里</div>;
+function QueuePanel({
+  jobs,
+  onCancel,
+  onRetry,
+  onClear,
+}: {
+  jobs: TransferJob[];
+  onCancel: (id: string) => void;
+  onRetry: (id: string) => void;
+  onClear: () => void;
+}) {
+  const active = jobs.filter((j) => j.status === "running" || j.status === "pending").length;
   return (
-    <div className="fm-transfers">
-      {items.map((t) => {
-        const pct = t.total > 0 ? Math.min(100, Math.round((t.done / t.total) * 100)) : 0;
-        return (
-          <div className="fm-transfer" key={t.id}>
-            <span className="fm-t-name" title={t.fileName}>
-              {t.direction === "upload"
-                ? "⤴"
-                : t.direction === "download"
-                  ? "⤵"
-                  : t.direction === "remoteToRemote"
-                    ? "⇄"
-                    : "→"}{" "}
-              {t.fileName}
-            </span>
-            <span className="fm-t-bar">
-              <i style={{ width: `${t.status === "done" ? 100 : pct}%` }} />
-            </span>
-            <span className="fm-t-text">
-              {t.status === "error"
-                ? `失败：${t.message ?? ""}`
-                : t.status === "done"
-                  ? `完成 ${formatSize(t.done)}`
-                  : `${pct}%  ${formatSize(t.done)}${t.total ? ` / ${formatSize(t.total)}` : ""}`}
-            </span>
-            {t.message && t.status === "running" && <span className="fm-t-msg">{t.message}</span>}
-          </div>
-        );
-      })}
+    <div className="fm-queue">
+      <div className="fm-queue-head">
+        <span>
+          传输队列 · {active} 个进行中 / 共 {jobs.length} 项
+          <span className="fm-queue-tip">（后台运行，关闭窗口也会继续传）</span>
+        </span>
+        <button className="fm-mini" onClick={onClear}>
+          清理已完成
+        </button>
+      </div>
+      {jobs.length === 0 && <div className="fm-note">还没有传输任务</div>}
+      <div className="fm-transfers">
+        {jobs.map((j) => {
+          const pct = j.total > 0 ? Math.min(100, Math.round((j.done / j.total) * 100)) : 0;
+          return (
+            <div className="fm-transfer" key={j.id}>
+              <span className="fm-t-name" title={`${j.srcPath} → ${j.dstPath}`}>
+                {KIND_ICON[j.kind] ?? "→"} {j.name}
+              </span>
+              <span className="fm-t-bar">
+                <i
+                  className={j.status === "error" ? "err" : undefined}
+                  style={{ width: `${j.status === "done" ? 100 : pct}%` }}
+                />
+              </span>
+              <span className="fm-t-text">
+                {STATUS_TEXT[j.status]}
+                {j.status === "running" || j.status === "pending"
+                  ? ` ${pct}% ${formatSize(j.done)}${j.total ? ` / ${formatSize(j.total)}` : ""}`
+                  : j.status === "done"
+                    ? ` ${formatSize(j.done)}`
+                    : ""}
+                {j.message && j.status !== "running" ? ` · ${j.message}` : ""}
+              </span>
+              <span className="fm-t-actions">
+                {(j.status === "running" || j.status === "pending") && (
+                  <button title="取消" onClick={() => onCancel(j.id)}>
+                    <XCircle size={12} />
+                  </button>
+                )}
+                {(j.status === "error" || j.status === "canceled") && (
+                  <button title="重试（断点续传）" onClick={() => onRetry(j.id)}>
+                    <RotateCcw size={12} />
+                  </button>
+                )}
+              </span>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -229,8 +254,7 @@ export function FileManager() {
   const [left, setLeft] = useState<Pane>(emptyPane("local"));
   const [right, setRight] = useState<Pane>(emptyPane("remote"));
   const [toast, setToast] = useState<string | null>(null);
-  const [busy, setBusy] = useState<string | null>(null);
-  const [transfers, setTransfers] = useState<TransferProgress[]>([]);
+  const [jobs, setJobs] = useState<TransferJob[]>([]);
 
   const leftRef = useRef(left);
   const rightRef = useRef(right);
@@ -247,7 +271,6 @@ export function FileManager() {
     setter((prev) => ({ ...prev, ...patch }));
   }, []);
 
-  /** 加载某个面板的目录列表 */
   const load = useCallback(
     async (side: Side, override?: Partial<Pane>) => {
       const pane: Pane = { ...getPane(side), ...(override ?? {}) };
@@ -276,7 +299,6 @@ export function FileManager() {
     [setPane],
   );
 
-  /** 切换来源（本地 / 某个远程主机） */
   const switchTo = useCallback(
     async (side: Side, kind: "local" | "remote", hostId: string | null) => {
       setPane(side, { kind, hostId, path: "", entries: [], selected: new Set(), error: null });
@@ -286,7 +308,6 @@ export function FileManager() {
     [load, setPane],
   );
 
-  // 首次进入：左=本地，右=?host 指定的远程（否则第一台主机）
   const started = useRef(false);
   useEffect(() => {
     if (started.current) return;
@@ -299,10 +320,11 @@ export function FileManager() {
       const target = wanted && hs.some((h) => h.id === wanted) ? wanted : hs[0]?.id ?? null;
       if (target) await load("right", { kind: "remote", hostId: target, path: "" });
       else await load("right", { kind: "local", hostId: null, path: "" });
+      setJobs(await api.listTransfers().catch(() => []));
     })().catch((e) => setToast(String(e)));
   }, [load]);
 
-  // 主窗口再点"文件"时，把已有窗口聚焦并切到该主机
+  // 主窗口再点"文件"时聚焦本窗口并切换左侧主机
   useEffect(() => {
     let un: (() => void) | undefined;
     listen<string | null>("fm-open", (ev) => {
@@ -315,26 +337,31 @@ export function FileManager() {
     return () => un?.();
   }, [switchTo]);
 
-  // 传输进度
+  // 订阅后台传输队列
   useEffect(() => {
     let un: (() => void) | undefined;
-    onTransferProgress((p) => {
-      setTransfers((prev) => {
-        const idx = prev.findIndex((i) => i.id === p.id);
+    onTransferJob((job) => {
+      setJobs((prev) => {
+        const idx = prev.findIndex((j) => j.id === job.id);
         if (idx >= 0) {
           const next = [...prev];
-          next[idx] = p;
+          next[idx] = job;
           return next;
         }
-        return [...prev, p].slice(-30);
+        return [...prev, job];
       });
+      // 任务结束/失败时刷新两侧列表（新文件已落地）
+      if (job.status === "done" || job.status === "error") {
+        void load("left");
+        void load("right");
+      }
     })
       .then((u) => {
         un = u;
       })
       .catch(() => undefined);
     return () => un?.();
-  }, []);
+  }, [load]);
 
   const select = (side: Side, name: string, e: React.MouseEvent) => {
     const pane = getPane(side);
@@ -389,7 +416,7 @@ export function FileManager() {
     }
   };
 
-  /** 把 from 侧选中的内容复制到另一侧（本地⇄远程 / 远程⇄远程 / 本地⇄本地） */
+  /** 把 from 侧选中的内容加入后台传输队列 */
   const doTransfer = async (from: Side) => {
     const to: Side = from === "left" ? "right" : "left";
     const src = getPane(from);
@@ -406,28 +433,37 @@ export function FileManager() {
       setToast("目标面板还没有选择远程连接");
       return;
     }
+    if (src.kind === "remote" && !src.hostId) {
+      setToast("源面板还没有选择远程连接");
+      return;
+    }
 
-    const names = [...src.selected];
-    const jobs = names.map((name) => async () => {
-      const sPath = joinPath(src.path, name);
-      const dPath = joinPath(dst.path, name);
-      if (src.kind === "local" && dst.kind === "remote") {
-        await api.sftpUpload(SESSION[to], sPath, dPath);
-      } else if (src.kind === "remote" && dst.kind === "local") {
-        await api.sftpDownload(SESSION[from], sPath, dPath);
-      } else if (src.kind === "remote" && dst.kind === "remote") {
-        await api.sftpCopyRemote(SESSION[from], sPath, SESSION[to], dPath);
-      } else {
-        await api.localCopy(sPath, dPath);
-      }
-    });
+    const kind: EnqueueJob["kind"] =
+      src.kind === "local" && dst.kind === "remote"
+        ? "upload"
+        : src.kind === "remote" && dst.kind === "local"
+          ? "download"
+          : src.kind === "remote" && dst.kind === "remote"
+            ? "remoteToRemote"
+            : "localToLocal";
 
-    setBusy(`传输中：${names.length} 项（4 路并发）…`);
-    const errors = await runPool(jobs, 4);
-    setBusy(null);
-    await Promise.all([load("left"), load("right")]);
-    if (errors.length) setToast(`${errors.length} 项失败：${errors[0]}`);
-    else setToast(`完成 ${names.length} 项传输`);
+    const enqueued: EnqueueJob[] = [...src.selected].map((name) => ({
+      name,
+      kind,
+      srcHost: src.kind === "remote" ? src.hostId : null,
+      srcPath: joinPath(src.path, name),
+      dstHost: dst.kind === "remote" ? dst.hostId : null,
+      dstPath: joinPath(dst.path, name),
+    }));
+
+    try {
+      const created = await api.enqueueTransfers(enqueued);
+      setJobs((prev) => [...prev, ...created]);
+      setPane(from, { selected: new Set() });
+      setToast(`已加入队列：${created.length} 项（后台传输，可关闭本窗口）`);
+    } catch (e) {
+      setToast(String(e));
+    }
   };
 
   const paneProps = (side: Side) => {
@@ -457,9 +493,9 @@ export function FileManager() {
       <header className="fm-top">
         <span className="fm-brand">🍅 文件管理</span>
         <span className="fm-sub">
-          两侧都可以选「本地磁盘」或任意远程主机 —— 两边都是远程时即**服务器之间直传**（不经过本机磁盘）
+          两侧都可以选「本地磁盘」或任意远程主机 —— 两边都是远程时即服务器之间直传（不经过本机磁盘）；
+          传输走后台队列，关闭本窗口也会继续
         </span>
-        {busy && <span className="fm-busy">{busy}</span>}
         {toast && (
           <button className="fm-toast" onClick={() => setToast(null)}>
             {toast} <X size={12} />
@@ -474,15 +510,13 @@ export function FileManager() {
           <button
             title={`把左侧选中项传到右侧${rightHost ? `（${rightHost.label}）` : ""}`}
             onClick={() => void doTransfer("left")}
-            disabled={!!busy}
           >
             <ArrowRight size={18} />
           </button>
-          <span className="fm-arrow-label">复制到</span>
+          <span className="fm-arrow-label">加入队列</span>
           <button
             title={`把右侧选中项传到左侧${leftHost ? `（${leftHost.label}）` : ""}`}
             onClick={() => void doTransfer("right")}
-            disabled={!!busy}
           >
             <ArrowLeft size={18} />
           </button>
@@ -492,7 +526,21 @@ export function FileManager() {
       </div>
 
       <footer className="fm-bottom">
-        <TransferList items={transfers} />
+        <QueuePanel
+          jobs={jobs}
+          onCancel={(id) => {
+            api.cancelTransfer(id).catch((e) => setToast(String(e)));
+          }}
+          onRetry={(id) => {
+            api.retryTransfer(id).catch((e) => setToast(String(e)));
+          }}
+          onClear={() => {
+            api
+              .clearFinishedTransfers()
+              .then(() => setJobs((prev) => prev.filter((j) => j.status === "running" || j.status === "pending")))
+              .catch((e) => setToast(String(e)));
+          }}
+        />
       </footer>
     </div>
   );

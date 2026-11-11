@@ -5,9 +5,10 @@ use std::time::Duration;
 
 use russh::client::Handle;
 use russh_sftp::client::SftpSession;
-use russh_sftp::protocol::FileAttributes;
+use russh_sftp::protocol::{FileAttributes, OpenFlags};
 use tauri::{AppHandle, Emitter};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use std::io::SeekFrom;
+use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 use tokio::task::JoinSet;
 
 use crate::error::{Error, IntoAppError, Result};
@@ -463,7 +464,10 @@ impl SftpManager {
                 let session = session.clone();
                 let counter = counter.clone();
                 let dst = join_remote(&root, &rel);
-                async move { upload_file_counted(&session, &abs, &dst, &counter).await }
+                async move {
+                    let mut ticker = Ticker::new(counter);
+                    upload_file_counted(&session, &abs, &dst, &mut ticker).await
+                }
             })
             .collect();
         run_concurrent_with_counter(sink, &mut progress, total, tasks, counter).await
@@ -539,7 +543,8 @@ impl SftpManager {
                 let session = session.clone();
                 let counter = counter.clone();
                 async move {
-                    download_file_counted(&session, &remote, &target, meta, &counter).await
+                    let mut ticker = Ticker::new(counter);
+                    download_file_counted(&session, &remote, &target, meta, &mut ticker).await
                 }
             })
             .collect();
@@ -568,15 +573,18 @@ impl SftpManager {
         if !meta.file_type().is_dir() {
             let mut progress = new_progress(&name, "remoteToRemote", meta.len(), None);
             sink.progress(&progress);
+            let counter = Arc::new(AtomicU64::new(0));
+            let mut ticker = Ticker::new(counter.clone());
             let result = copy_stream(
                 &src,
                 src_path,
                 &dst,
                 dst_path,
-                &Arc::new(AtomicU64::new(0)),
+                &mut ticker,
                 FileMeta::from_attrs(&meta),
             )
             .await;
+            progress.done = counter.load(Ordering::Relaxed);
             return finish_progress(sink, &mut progress, result);
         }
 
@@ -619,7 +627,8 @@ impl SftpManager {
                 let dst = dst.clone();
                 let counter = counter.clone();
                 async move {
-                    copy_stream(&src, &from, &dst, &to, &counter, meta).await
+                    let mut ticker = Ticker::new(counter);
+                    copy_stream(&src, &from, &dst, &to, &mut ticker, meta).await
                 }
             })
             .collect();
@@ -695,7 +704,41 @@ where
     }
 }
 
-// ---------------------------------------------------------------- 单文件流式读写
+// ---------------------------------------------------------------- 断点续传 / 失败重试
+
+/// 单文件重试次数
+const MAX_ATTEMPTS: u32 = 3;
+
+/// 每个文件自己的进度计数器。
+/// 用 `sync_to` 而不是累加，是为了失败重试（可能从头重传、可能续传）时进度不会算重。
+struct Ticker {
+    global: Arc<AtomicU64>,
+    mine: u64,
+}
+
+impl Ticker {
+    fn new(global: Arc<AtomicU64>) -> Self {
+        Self { global, mine: 0 }
+    }
+
+    fn sync_to(&mut self, bytes: u64) {
+        if bytes > self.mine {
+            self.global.fetch_add(bytes - self.mine, Ordering::Relaxed);
+        } else if bytes < self.mine {
+            self.global.fetch_sub(self.mine - bytes, Ordering::Relaxed);
+        }
+        self.mine = bytes;
+    }
+
+    fn add(&mut self, bytes: u64) {
+        self.mine += bytes;
+        self.global.fetch_add(bytes, Ordering::Relaxed);
+    }
+}
+
+fn backoff(attempt: u32) -> Duration {
+    Duration::from_millis(400 * (1u64 << attempt.min(4)))
+}
 
 async fn upload_one(
     sink: &dyn TransferSink,
@@ -712,8 +755,8 @@ async fn upload_one(
     );
     sink.progress(&progress);
     let counter = Arc::new(AtomicU64::new(0));
-    let result =
-        upload_file_counted(session, local_path, remote_path, &counter).await.map(|_| ());
+    let mut ticker = Ticker::new(counter.clone());
+    let result = upload_file_counted(session, local_path, remote_path, &mut ticker).await;
     progress.done = counter.load(Ordering::Relaxed);
     finish_progress(sink, &mut progress, result)
 }
@@ -734,9 +777,8 @@ async fn download_one(
     );
     sink.progress(&progress);
     let counter = Arc::new(AtomicU64::new(0));
-    let result = download_file_counted(session, remote_path, local_path, meta, &counter)
-        .await
-        .map(|_| ());
+    let mut ticker = Ticker::new(counter.clone());
+    let result = download_file_counted(session, remote_path, local_path, meta, &mut ticker).await;
     progress.done = counter.load(Ordering::Relaxed);
     finish_progress(sink, &mut progress, result)
 }
@@ -777,19 +819,72 @@ fn apply_meta_to_local(local_path: &str, meta: &FileMeta) {
     }
 }
 
+/// 上传单个文件：自动断点续传 + 失败重试
 async fn upload_file_counted(
     session: &SftpSession,
     local_path: &str,
     remote_path: &str,
-    counter: &AtomicU64,
+    ticker: &mut Ticker,
 ) -> Result<()> {
+    let mut last: Option<Error> = None;
+    for attempt in 0..MAX_ATTEMPTS {
+        match upload_file_once(session, local_path, remote_path, ticker).await {
+            Ok(()) => return Ok(()),
+            Err(e) => {
+                last = Some(e);
+                if attempt + 1 < MAX_ATTEMPTS {
+                    tokio::time::sleep(backoff(attempt)).await;
+                }
+            }
+        }
+    }
+    Err(last.unwrap_or_else(|| Error::msg("上传失败")))
+}
+
+async fn upload_file_once(
+    session: &SftpSession,
+    local_path: &str,
+    remote_path: &str,
+    ticker: &mut Ticker,
+) -> Result<()> {
+    let local_size = std::fs::metadata(local_path).map(|m| m.len()).unwrap_or(0);
+    let remote_size = session
+        .metadata(remote_path)
+        .await
+        .ok()
+        .map(|m| m.len())
+        .unwrap_or(0);
+    // 远端已有不完整文件 → 从断点续传；远端更大（异常）→ 从头重传
+    let resume_from = if remote_size > 0 && remote_size <= local_size {
+        remote_size
+    } else {
+        0
+    };
+
     let mut local = tokio::fs::File::open(local_path)
         .await
         .map_err(|e| Error::msg(format!("打开本地文件失败（{local_path}）：{e}")))?;
-    let mut remote = session
-        .create(remote_path)
-        .await
-        .map_err(|e| Error::msg(format!("创建远程文件失败（{remote_path}）：{e}")))?;
+
+    let mut remote = if resume_from > 0 {
+        let mut f = session
+            .open_with_flags(remote_path, OpenFlags::WRITE)
+            .await
+            .map_err(|e| Error::msg(format!("续传打开远程文件失败（{remote_path}）：{e}")))?;
+        f.seek(SeekFrom::Start(resume_from))
+            .await
+            .map_err(|e| Error::msg(format!("定位远程文件失败（{remote_path}）：{e}")))?;
+        local
+            .seek(SeekFrom::Start(resume_from))
+            .await
+            .map_err(|e| Error::msg(format!("定位本地文件失败（{local_path}）：{e}")))?;
+        f
+    } else {
+        session
+            .create(remote_path)
+            .await
+            .map_err(|e| Error::msg(format!("创建远程文件失败（{remote_path}）：{e}")))?
+    };
+    ticker.sync_to(resume_from);
 
     let mut buf = vec![0u8; CHUNK];
     loop {
@@ -804,30 +899,87 @@ async fn upload_file_counted(
             .write_all(&buf[..n])
             .await
             .map_err(|e| Error::msg(format!("写入远程文件失败（{remote_path}）：{e}")))?;
-        counter.fetch_add(n as u64, Ordering::Relaxed);
+        ticker.add(n as u64);
     }
     let _ = remote.shutdown().await;
     apply_meta_to_remote(session, remote_path, local_path).await;
     Ok(())
 }
 
+/// 下载单个文件：自动断点续传 + 失败重试
 async fn download_file_counted(
     session: &SftpSession,
     remote_path: &str,
     local_path: &str,
     meta: FileMeta,
-    counter: &AtomicU64,
+    ticker: &mut Ticker,
 ) -> Result<()> {
+    let mut last: Option<Error> = None;
+    for attempt in 0..MAX_ATTEMPTS {
+        match download_file_once(session, remote_path, local_path, &meta, ticker).await {
+            Ok(()) => return Ok(()),
+            Err(e) => {
+                last = Some(e);
+                if attempt + 1 < MAX_ATTEMPTS {
+                    tokio::time::sleep(backoff(attempt)).await;
+                }
+            }
+        }
+    }
+    Err(last.unwrap_or_else(|| Error::msg("下载失败")))
+}
+
+async fn download_file_once(
+    session: &SftpSession,
+    remote_path: &str,
+    local_path: &str,
+    meta: &FileMeta,
+    ticker: &mut Ticker,
+) -> Result<()> {
+    let remote_size = session
+        .metadata(remote_path)
+        .await
+        .map_err(|e| Error::msg(format!("读取远程文件大小失败（{remote_path}）：{e}")))?
+        .len();
+    if let Some(parent) = std::path::Path::new(local_path).parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    let local_size = std::fs::metadata(local_path).map(|m| m.len()).unwrap_or(0);
+
+    if local_size > 0 && local_size == remote_size {
+        // 已经下载完整，直接认为完成（避免重复拉取）
+        ticker.sync_to(local_size);
+        apply_meta_to_local(local_path, meta);
+        return Ok(());
+    }
+    let resume_from = if local_size > 0 && local_size < remote_size {
+        local_size
+    } else {
+        0
+    };
+
     let mut remote = session
         .open(remote_path)
         .await
         .map_err(|e| Error::msg(format!("打开远程文件失败（{remote_path}）：{e}")))?;
-    if let Some(parent) = std::path::Path::new(local_path).parent() {
-        let _ = std::fs::create_dir_all(parent);
+    if resume_from > 0 {
+        remote
+            .seek(SeekFrom::Start(resume_from))
+            .await
+            .map_err(|e| Error::msg(format!("定位远程文件失败（{remote_path}）：{e}")))?;
     }
-    let mut local = tokio::fs::File::create(local_path)
-        .await
-        .map_err(|e| Error::msg(format!("创建本地文件失败（{local_path}）：{e}")))?;
+    let mut local = if resume_from > 0 {
+        tokio::fs::OpenOptions::new()
+            .append(true)
+            .open(local_path)
+            .await
+            .map_err(|e| Error::msg(format!("续传打开本地文件失败（{local_path}）：{e}")))?
+    } else {
+        tokio::fs::File::create(local_path)
+            .await
+            .map_err(|e| Error::msg(format!("创建本地文件失败（{local_path}）：{e}")))?
+    };
+    ticker.sync_to(resume_from);
 
     let mut buf = vec![0u8; CHUNK];
     loop {
@@ -842,33 +994,89 @@ async fn download_file_counted(
             .write_all(&buf[..n])
             .await
             .map_err(|e| Error::msg(format!("写入本地文件失败（{local_path}）：{e}")))?;
-        counter.fetch_add(n as u64, Ordering::Relaxed);
+        ticker.add(n as u64);
     }
     local
         .flush()
         .await
         .map_err(|e| Error::msg(format!("写入本地文件失败（{local_path}）：{e}")))?;
     drop(local);
-    apply_meta_to_local(local_path, &meta);
+    apply_meta_to_local(local_path, meta);
     Ok(())
 }
 
+/// 远程 → 远程单文件：自动断点续传 + 失败重试
 async fn copy_stream(
     src: &SftpSession,
     src_path: &str,
     dst: &SftpSession,
     dst_path: &str,
-    counter: &AtomicU64,
+    ticker: &mut Ticker,
     meta: FileMeta,
 ) -> Result<()> {
+    let mut last: Option<Error> = None;
+    for attempt in 0..MAX_ATTEMPTS {
+        match copy_stream_once(src, src_path, dst, dst_path, ticker, &meta).await {
+            Ok(()) => return Ok(()),
+            Err(e) => {
+                last = Some(e);
+                if attempt + 1 < MAX_ATTEMPTS {
+                    tokio::time::sleep(backoff(attempt)).await;
+                }
+            }
+        }
+    }
+    Err(last.unwrap_or_else(|| Error::msg("远程互传失败")))
+}
+
+async fn copy_stream_once(
+    src: &SftpSession,
+    src_path: &str,
+    dst: &SftpSession,
+    dst_path: &str,
+    ticker: &mut Ticker,
+    meta: &FileMeta,
+) -> Result<()> {
+    let src_size = src
+        .metadata(src_path)
+        .await
+        .map_err(|e| Error::msg(format!("读取源文件大小失败（{src_path}）：{e}")))?
+        .len();
+    let dst_size = dst
+        .metadata(dst_path)
+        .await
+        .ok()
+        .map(|m| m.len())
+        .unwrap_or(0);
+    let resume_from = if dst_size > 0 && dst_size <= src_size {
+        dst_size
+    } else {
+        0
+    };
+
     let mut reader = src
         .open(src_path)
         .await
         .map_err(|e| Error::msg(format!("打开源文件失败（{src_path}）：{e}")))?;
-    let mut writer = dst
-        .create(dst_path)
-        .await
-        .map_err(|e| Error::msg(format!("创建目标文件失败（{dst_path}）：{e}")))?;
+    let mut writer = if resume_from > 0 {
+        let mut f = dst
+            .open_with_flags(dst_path, OpenFlags::WRITE)
+            .await
+            .map_err(|e| Error::msg(format!("续传打开目标文件失败（{dst_path}）：{e}")))?;
+        f.seek(SeekFrom::Start(resume_from))
+            .await
+            .map_err(|e| Error::msg(format!("定位目标文件失败（{dst_path}）：{e}")))?;
+        reader
+            .seek(SeekFrom::Start(resume_from))
+            .await
+            .map_err(|e| Error::msg(format!("定位源文件失败（{src_path}）：{e}")))?;
+        f
+    } else {
+        dst.create(dst_path)
+            .await
+            .map_err(|e| Error::msg(format!("创建目标文件失败（{dst_path}）：{e}")))?
+    };
+    ticker.sync_to(resume_from);
 
     let mut buf = vec![0u8; CHUNK];
     loop {
@@ -883,7 +1091,7 @@ async fn copy_stream(
             .write_all(&buf[..n])
             .await
             .map_err(|e| Error::msg(format!("写入目标文件失败（{dst_path}）：{e}")))?;
-        counter.fetch_add(n as u64, Ordering::Relaxed);
+        ticker.add(n as u64);
     }
     let _ = writer.shutdown().await;
 
@@ -1042,6 +1250,33 @@ mod e2e {
                 &std::fs::metadata(dl.join("a.txt")).unwrap(),
             );
             assert_eq!(downloaded_mtime.unix_seconds(), 1_600_000_000);
+
+            // 3.1) 断点续传：把本地已下载的文件截断一半，再下一次应该只补另一半
+            let half = 2;
+            let file_path = dl.join("sub/b.txt"); // 内容 b"22222"，共 5 字节
+            let bytes = std::fs::read(&file_path).unwrap();
+            std::fs::write(&file_path, &bytes[..half]).unwrap();
+            mgr.download(&sink, "s1", &format!("{remote_dir}/sub/b.txt"), &file_path.to_string_lossy())
+                .await
+                .expect("续传下载");
+            assert_eq!(std::fs::read(&file_path).unwrap(), b"22222", "续传后内容应完整且无重复");
+
+            // 3.2) 上传续传：远端已有半截文件时，从断点续传
+            let up_local = std::env::temp_dir().join(format!("tsftp-up-{tag}.bin"));
+            std::fs::write(&up_local, vec![1u8; 3000]).unwrap();
+            let up_remote = join_remote(&home, &format!("tsftp-up-{tag}.bin"));
+            mgr.upload(&sink, "s1", &up_local.to_string_lossy(), &up_remote)
+                .await
+                .expect("首次上传");
+            // 再把本地内容变长，第二次上传应续传（远端已有 3000 字节）
+            std::fs::write(&up_local, vec![2u8; 5000]).unwrap();
+            mgr.upload(&sink, "s1", &up_local.to_string_lossy(), &up_remote)
+                .await
+                .expect("续传上传");
+            let remote_len = session.metadata(up_remote.as_str()).await.unwrap().len();
+            assert_eq!(remote_len, 5000, "续传上传后远程大小应为 5000（未截断）");
+            let _ = session.remove_file(up_remote.as_str()).await;
+            let _ = std::fs::remove_file(&up_local);
 
             // 4) 远程 → 远程（目录）
             mgr.open("s2", &host).await.expect("第二个 SFTP 会话");

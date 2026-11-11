@@ -2,6 +2,7 @@ mod commands;
 mod crypto;
 mod error;
 mod local;
+mod queue;
 mod localfs;
 mod models;
 mod sftp;
@@ -23,9 +24,25 @@ pub fn run() {
                 .path()
                 .app_config_dir()
                 .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
-            let vault = VaultStore::open(&dir)
-                .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
-            app.manage(AppState::new(vault));
+            let vault = std::sync::Arc::new(std::sync::Mutex::new(
+                VaultStore::open(&dir).map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?,
+            ));
+            let sftp = std::sync::Arc::new(crate::sftp::SftpManager::default());
+            // 后台传输队列：与 UI 窗口解耦，关掉文件管理窗口也会继续传
+            let queue = std::sync::Arc::new(crate::queue::TransferQueue::new(
+                app.handle().clone(),
+                sftp.clone(),
+                vault.clone(),
+                dir.join("transfer-queue.json"),
+            ));
+            queue.start();
+            app.manage(AppState::new(
+                vault,
+                std::sync::Arc::new(crate::ssh::SshManager::default()),
+                sftp,
+                std::sync::Arc::new(crate::local::LocalManager::default()),
+                queue,
+            ));
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -59,6 +76,11 @@ pub fn run() {
             commands::local_rename,
             commands::local_copy,
             commands::open_file_manager,
+            commands::enqueue_transfers,
+            commands::list_transfers,
+            commands::cancel_transfer,
+            commands::retry_transfer,
+            commands::clear_finished_transfers,
             commands::sync_state,
             commands::sync_login,
             commands::sync_register,

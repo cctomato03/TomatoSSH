@@ -308,3 +308,50 @@ body,
   opacity: 0.75;
   white-space: nowrap;
 }
+
+/* 传输队列 */
+.fm-queue-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+.fm-queue-tip {
+  opacity: 0.75;
+}
+.fm-mini {
+  font-size: 10px;
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 2px 8px;
+}
+.fm-mini:hover {
+  color: var(--text);
+  background: var(--surface);
+}
+.fm-t-actions {
+  display: flex;
+  gap: 2px;
+}
+.fm-t-actions button {
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  display: grid;
+  place-items: center;
+  color: var(--text-muted);
+}
+.fm-t-actions button:hover {
+  background: var(--input);
+  color: var(--text);
+}
+.fm-t-bar > i.err {
+  background: var(--danger);
+}
+.fm-bottom {
+  max-height: 168px;
+}

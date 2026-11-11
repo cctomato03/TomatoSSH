@@ -2,12 +2,14 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type {
   AppSettings,
+  EnqueueJob,
   FileEntry,
   GroupRecord,
   HostDraft,
   HostRecord,
   SyncResult,
   SyncStateDto,
+  TransferJob,
   TransferProgress,
   VaultSnapshot,
 } from "./types";
@@ -72,6 +74,13 @@ export const api = {
   openFileManager: (hostId?: string | null) =>
     call<void>("open_file_manager", { hostId: hostId ?? null }),
 
+  // ---------- 后台传输队列 ----------
+  enqueueTransfers: (jobs: EnqueueJob[]) => call<TransferJob[]>("enqueue_transfers", { jobs }),
+  listTransfers: () => call<TransferJob[]>("list_transfers"),
+  cancelTransfer: (id: string) => call<void>("cancel_transfer", { id }),
+  retryTransfer: (id: string) => call<void>("retry_transfer", { id }),
+  clearFinishedTransfers: () => call<void>("clear_finished_transfers"),
+
   // ---------- 云同步 ----------
   syncState: () => call<SyncStateDto>("sync_state"),
   syncLogin: (serverUrl: string, email: string, password: string) =>
@@ -97,6 +106,11 @@ export function onTermExit(sessionId: string, cb: (info: { code: number | null; 
 /** 传输进度 */
 export function onTransferProgress(cb: (p: TransferProgress) => void): Promise<UnlistenFn> {
   return listen<TransferProgress>("transfer-progress", (e) => cb(e.payload));
+}
+
+/** 后台传输队列的任务变化 */
+export function onTransferJob(cb: (j: TransferJob) => void): Promise<UnlistenFn> {
+  return listen<TransferJob>("transfer-job", (e) => cb(e.payload));
 }
 
 export function base64ToBytes(b64: string): Uint8Array {

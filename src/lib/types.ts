@@ -108,6 +108,33 @@ export interface HostDraft {
   keepaliveSecs?: number;
 }
 
+/** 后台传输队列里的一个任务 */
+export interface TransferJob {
+  id: string;
+  name: string;
+  kind: "upload" | "download" | "remoteToRemote" | "localToLocal";
+  srcHost: string | null;
+  srcPath: string;
+  dstHost: string | null;
+  dstPath: string;
+  total: number;
+  done: number;
+  status: "pending" | "running" | "done" | "error" | "canceled";
+  message: string | null;
+  attempts: number;
+  createdAt: number;
+}
+
+/** 入队请求 */
+export interface EnqueueJob {
+  name: string;
+  kind: "upload" | "download" | "remoteToRemote" | "localToLocal";
+  srcHost: string | null;
+  srcPath: string;
+  dstHost: string | null;
+  dstPath: string;
+}
+
 /** 一个标签页：SSH 会话或本地终端 */
 export interface TabRecord {
   id: string;
