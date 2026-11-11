@@ -1,4 +1,4 @@
-﻿//! 编译校验入口：直接复用 `src-tauri/src` 下的真实源码，
+//! 编译校验入口：直接复用 `src-tauri/src` 下的真实源码，
 //! 只把 tauri 运行时替换成 `tools/shim-tauri` 桩，用来在没有
 //! MSVC / Tauri 构建环境的机器上验证后端代码能否编译通过。
 #![allow(dead_code)]

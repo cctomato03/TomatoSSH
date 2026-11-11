@@ -5236,7 +5236,7 @@ dependencies = [
 
 [[package]]
 name = "tomatossh"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "aes-gcm 0.10.3",
  "anyhow",

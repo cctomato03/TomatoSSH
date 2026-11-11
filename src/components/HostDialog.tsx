@@ -1,4 +1,4 @@
-﻿import { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
 import { KeyRound, FileKey, FolderTree } from "lucide-react";
 import type { AuthType, HostDraft } from "../lib/types";
