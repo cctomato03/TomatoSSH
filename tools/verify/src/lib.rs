@@ -18,6 +18,12 @@ pub mod vault;
 #[path = "../../../src-tauri/src/ssh.rs"]
 pub mod ssh;
 
+#[path = "../../../src-tauri/src/serial.rs"]
+pub mod serial;
+
+#[path = "../../../src-tauri/src/queue.rs"]
+pub mod queue;
+
 #[path = "../../../src-tauri/src/sftp.rs"]
 pub mod sftp;
 
@@ -43,9 +49,25 @@ pub fn run() {
                 .path()
                 .app_config_dir()
                 .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
-            let vault = vault::VaultStore::open(&dir)
-                .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
-            app.manage(commands::AppState::new(vault));
+            let vault = std::sync::Arc::new(std::sync::Mutex::new(
+                vault::VaultStore::open(&dir)
+                    .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?,
+            ));
+            let sftp = std::sync::Arc::new(sftp::SftpManager::default());
+            let queue = std::sync::Arc::new(queue::TransferQueue::new(
+                tauri::AppHandle::new(),
+                sftp.clone(),
+                vault.clone(),
+                dir.join("transfer-queue.json"),
+            ));
+            app.manage(commands::AppState::new(
+                vault,
+                std::sync::Arc::new(ssh::SshManager::default()),
+                sftp,
+                std::sync::Arc::new(local::LocalManager::default()),
+                std::sync::Arc::new(serial::SerialManager::default()),
+                queue,
+            ));
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

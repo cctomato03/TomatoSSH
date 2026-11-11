@@ -5,6 +5,7 @@ mod local;
 mod queue;
 mod localfs;
 mod models;
+mod serial;
 mod sftp;
 mod ssh;
 mod sync;
@@ -41,6 +42,7 @@ pub fn run() {
                 std::sync::Arc::new(crate::ssh::SshManager::default()),
                 sftp,
                 std::sync::Arc::new(crate::local::LocalManager::default()),
+                std::sync::Arc::new(crate::serial::SerialManager::default()),
                 queue,
             ));
             Ok(())
@@ -82,6 +84,10 @@ pub fn run() {
             commands::retry_transfer,
             commands::clear_finished_transfers,
             commands::app_version,
+            commands::serial_list_ports,
+            commands::serial_save,
+            commands::serial_delete,
+            commands::serial_open,
             commands::sync_state,
             commands::sync_login,
             commands::sync_register,

@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { api } from "../lib/api";
 import { applyThemeVars, getTheme, DEFAULT_THEME_ID } from "../lib/themes";
-import type { AppSettings, GroupRecord, HostDraft, HostRecord } from "../lib/types";
+import type { AppSettings, GroupRecord, HostDraft, HostRecord, SerialProfile } from "../lib/types";
 
 export const DEFAULT_SETTINGS: AppSettings = {
   theme: DEFAULT_THEME_ID,
@@ -20,12 +20,15 @@ interface VaultState {
   error: string | null;
   hosts: HostRecord[];
   groups: GroupRecord[];
+  serials: SerialProfile[];
   settings: AppSettings;
   load: () => Promise<void>;
   saveHost: (draft: HostDraft) => Promise<HostRecord>;
   deleteHost: (id: string) => Promise<void>;
   saveGroup: (draft: Partial<GroupRecord> & { name: string }) => Promise<GroupRecord>;
   deleteGroup: (id: string) => Promise<void>;
+  saveSerial: (draft: SerialProfile) => Promise<SerialProfile>;
+  deleteSerial: (id: string) => Promise<void>;
   updateSettings: (patch: Partial<AppSettings>) => void;
   /** 云同步后重新拉取整库 */
   refreshFromServer: () => Promise<void>;
@@ -39,6 +42,7 @@ export const useVault = create<VaultState>((set, get) => ({
   error: null,
   hosts: [],
   groups: [],
+  serials: [],
   settings: DEFAULT_SETTINGS,
 
   async load() {
@@ -51,7 +55,14 @@ export const useVault = create<VaultState>((set, get) => ({
         sync: { ...DEFAULT_SETTINGS.sync, ...(snap.settings?.sync ?? {}) },
       };
       applyThemeVars(getTheme(settings.theme));
-      set({ hosts: snap.hosts, groups: snap.groups, settings, loaded: true, loading: false });
+      set({
+        hosts: snap.hosts,
+        groups: snap.groups,
+        serials: snap.serials ?? [],
+        settings,
+        loaded: true,
+        loading: false,
+      });
     } catch (e) {
       set({ error: String(e), loading: false, loaded: true });
     }
@@ -103,6 +114,21 @@ export const useVault = create<VaultState>((set, get) => ({
     }, 250);
   },
 
+  async saveSerial(draft) {
+    const saved = await api.serialSave(draft);
+    set((s) => {
+      const idx = s.serials.findIndex((x) => x.id === saved.id);
+      const serials = idx >= 0 ? s.serials.map((x) => (x.id === saved.id ? saved : x)) : [...s.serials, saved];
+      return { serials };
+    });
+    return saved;
+  },
+
+  async deleteSerial(id) {
+    await api.serialDelete(id);
+    set((s) => ({ serials: s.serials.filter((x) => x.id !== id) }));
+  },
+
   async refreshFromServer() {
     const snap = await api.loadVault();
     const settings: AppSettings = {
@@ -111,6 +137,6 @@ export const useVault = create<VaultState>((set, get) => ({
       sync: { ...DEFAULT_SETTINGS.sync, ...(snap.settings?.sync ?? {}) },
     };
     applyThemeVars(getTheme(settings.theme));
-    set({ hosts: snap.hosts, groups: snap.groups, settings });
+    set({ hosts: snap.hosts, groups: snap.groups, serials: snap.serials ?? [], settings });
   },
 }));

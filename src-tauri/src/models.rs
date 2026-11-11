@@ -118,8 +118,7 @@ impl Default for HostDraft {
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(rename_all = "camelCase", default)]
-pub struct Group {
-    pub id: String,
+pub struct Group {    pub id: String,
     pub name: String,
     pub parent_id: Option<String>,
     pub color: Option<String>,
@@ -224,12 +223,71 @@ pub struct DeviceSecrets {
     pub sync_revision: Option<i64>,
 }
 
+/// 串口连接配置（只做终端交互，不做文件传输）
+#[derive(Serialize, Deserialize, Clone, Debug)]
+#[serde(rename_all = "camelCase", default)]
+pub struct SerialProfile {
+    pub id: String,
+    pub label: String,
+    /// Windows: COM3 / Linux: /dev/ttyUSB0 / macOS: /dev/cu.usbserial-*
+    pub port_name: String,
+    pub baud_rate: u32,
+    /// 5 | 6 | 7 | 8
+    pub data_bits: u8,
+    /// none | odd | even
+    pub parity: String,
+    /// 1 | 2
+    pub stop_bits: u8,
+    /// none | software | hardware
+    pub flow_control: String,
+    pub updated_at: i64,
+    pub deleted: bool,
+}
+
+impl Default for SerialProfile {
+    fn default() -> Self {
+        Self {
+            id: String::new(),
+            label: String::new(),
+            port_name: String::new(),
+            baud_rate: 115_200,
+            data_bits: 8,
+            parity: "none".into(),
+            stop_bits: 1,
+            flow_control: "none".into(),
+            updated_at: 0,
+            deleted: false,
+        }
+    }
+}
+
+impl SerialProfile {
+    pub fn display_name(&self) -> String {
+        if self.label.is_empty() {
+            format!("{} @ {}", self.port_name, self.baud_rate)
+        } else {
+            self.label.clone()
+        }
+    }
+}
+
+/// 系统里可用的串口
+#[derive(Serialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct SerialPortInfo {
+    pub name: String,
+    /// usb | bluetooth | pci | unknown
+    pub kind: String,
+    pub detail: Option<String>,
+}
+
 /// 参与云同步的数据（不含本机密钥）
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
 #[serde(rename_all = "camelCase", default)]
 pub struct VaultData {
     pub hosts: Vec<Host>,
     pub groups: Vec<Group>,
+    pub serials: Vec<SerialProfile>,
     pub settings: Settings,
     pub secrets: DeviceSecrets,
 }
@@ -239,6 +297,7 @@ pub struct VaultData {
 pub struct Snapshot {
     pub hosts: Vec<Host>,
     pub groups: Vec<Group>,
+    pub serials: Vec<SerialProfile>,
     pub settings: Settings,
 }
 

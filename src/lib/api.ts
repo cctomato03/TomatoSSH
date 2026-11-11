@@ -7,6 +7,8 @@ import type {
   GroupRecord,
   HostDraft,
   HostRecord,
+  SerialPortInfo,
+  SerialProfile,
   SyncResult,
   SyncStateDto,
   TransferJob,
@@ -74,7 +76,14 @@ export const api = {
   openFileManager: (hostId?: string | null) =>
     call<void>("open_file_manager", { hostId: hostId ?? null }),
 
-  /** 当前 App 版本（用于和 git tag 核对） */
+  // ---------- 串口 ----------
+  serialListPorts: () => call<SerialPortInfo[]>("serial_list_ports"),
+  serialSave: (draft: SerialProfile) => call<SerialProfile>("serial_save", { draft }),
+  serialDelete: (id: string) => call<void>("serial_delete", { id }),
+  serialOpen: (sessionId: string, profileId: string) =>
+    call<string>("serial_open", { sessionId, profileId }),
+
+  // ---------- App 信息 ----------
   appVersion: () => call<string>("app_version"),
 
   // ---------- 后台传输队列 ----------

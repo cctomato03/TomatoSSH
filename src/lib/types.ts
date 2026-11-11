@@ -56,6 +56,7 @@ export interface AppSettings {
 export interface VaultSnapshot {
   hosts: HostRecord[];
   groups: GroupRecord[];
+  serials: SerialProfile[];
   settings: AppSettings;
 }
 
@@ -108,6 +109,27 @@ export interface HostDraft {
   keepaliveSecs?: number;
 }
 
+/** 串口连接配置 */
+export interface SerialProfile {
+  id: string;
+  label: string;
+  portName: string;
+  baudRate: number;
+  dataBits: number;
+  parity: string;
+  stopBits: number;
+  flowControl: string;
+  updatedAt: number;
+  deleted: boolean;
+}
+
+/** 系统里可用的串口 */
+export interface SerialPortInfo {
+  name: string;
+  kind: string;
+  detail: string | null;
+}
+
 /** 后台传输队列里的一个任务 */
 export interface TransferJob {
   id: string;
@@ -138,9 +160,11 @@ export interface EnqueueJob {
 /** 一个标签页：SSH 会话或本地终端 */
 export interface TabRecord {
   id: string;
-  kind: "ssh" | "local";
+  kind: "ssh" | "local" | "serial";
   title: string;
   hostId: string | null;
+  /** 串口连接配置 id（kind === "serial" 时使用） */
+  serialId?: string | null;
   status: "connecting" | "connected" | "closed" | "error";
   error?: string | null;
   cwd?: string | null;

@@ -7,6 +7,7 @@ use crate::local::LocalManager;
 use crate::localfs;
 use crate::models::*;
 use crate::queue::{EnqueueJob, TransferJob, TransferQueue};
+use crate::serial::SerialManager;
 use crate::sftp::SftpManager;
 use crate::ssh::SshManager;
 use crate::sync;
@@ -18,6 +19,7 @@ pub struct AppState {
     pub ssh: Arc<SshManager>,
     pub sftp: Arc<SftpManager>,
     pub local: Arc<LocalManager>,
+    pub serial: Arc<SerialManager>,
     pub queue: Arc<TransferQueue>,
 }
 
@@ -27,6 +29,7 @@ impl AppState {
         ssh: Arc<SshManager>,
         sftp: Arc<SftpManager>,
         local: Arc<LocalManager>,
+        serial: Arc<SerialManager>,
         queue: Arc<TransferQueue>,
     ) -> Self {
         Self {
@@ -34,6 +37,7 @@ impl AppState {
             ssh,
             sftp,
             local,
+            serial,
             queue,
         }
     }
@@ -141,6 +145,8 @@ pub async fn term_write(state: State<'_, AppState>, session_id: String, data: St
         state.ssh.write(&session_id, data.as_bytes()).await
     } else if state.local.has(&session_id) {
         state.local.write(&session_id, data.as_bytes())
+    } else if state.serial.has(&session_id) {
+        state.serial.write(&session_id, data.as_bytes())
     } else {
         Err(Error::msg("会话不存在或已关闭"))
     }
@@ -169,6 +175,9 @@ pub async fn term_close(state: State<'_, AppState>, session_id: String) -> Resul
     }
     if state.local.has(&session_id) {
         state.local.close(&session_id);
+    }
+    if state.serial.has(&session_id) {
+        state.serial.close(&session_id);
     }
     Ok(())
 }
@@ -313,6 +322,40 @@ pub fn local_rename(from: String, to: String) -> Result<()> {
 #[tauri::command]
 pub fn local_copy(from: String, to: String) -> Result<()> {
     localfs::copy(&from, &to)
+}
+
+// ---------------------------------------------------------------- 串口
+
+#[tauri::command]
+pub fn serial_list_ports() -> Result<Vec<SerialPortInfo>> {
+    crate::serial::list_ports()
+}
+
+#[tauri::command]
+pub fn serial_save(state: State<'_, AppState>, draft: SerialProfile) -> Result<SerialProfile> {
+    let mut vault = state.vault.lock()?;
+    vault.upsert_serial(draft)
+}
+
+#[tauri::command]
+pub fn serial_delete(state: State<'_, AppState>, id: String) -> Result<()> {
+    let mut vault = state.vault.lock()?;
+    vault.delete_serial(&id)
+}
+
+/// 打开串口终端（只有终端交互，没有文件传输）
+#[tauri::command]
+pub fn serial_open(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    session_id: String,
+    profile_id: String,
+) -> Result<String> {
+    let profile = {
+        let vault = state.vault.lock()?;
+        vault.serial(&profile_id)?
+    };
+    state.serial.open(app, session_id, &profile)
 }
 
 /// 打开独立的 SFTP 文件管理器窗口（支持 本地 ⇄ 远程、远程 ⇄ 远程）

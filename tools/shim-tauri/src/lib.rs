@@ -88,6 +88,71 @@ pub trait Manager<R: Runtime = Wry> {
     fn path(&self) -> PathResolver;
     fn manage<T: Send + Sync + 'static>(&self, state: T) -> bool;
     fn state<T: Send + Sync + 'static>(&self) -> State<'_, T>;
+    fn get_webview_window(&self, label: &str) -> Option<WebviewWindow<R>>;
+}
+
+/// 供 `Queue` 模块使用的异步运行时桩
+pub mod async_runtime {
+    /// 编译校验用：不真正调度任务
+    pub fn spawn<F>(_future: F)
+    where
+        F: std::future::Future<Output = ()> + Send + 'static,
+    {
+    }
+}
+
+#[derive(Clone, Debug)]
+pub enum WebviewUrl {
+    App(std::path::PathBuf),
+    External(String),
+}
+
+#[derive(Clone)]
+pub struct WebviewWindow<R: Runtime = Wry> {
+    pub label: String,
+    _rt: PhantomData<R>,
+}
+
+impl<R: Runtime> WebviewWindow<R> {
+    pub fn set_focus(&self) -> Result<()> {
+        Ok(())
+    }
+}
+
+impl<R: Runtime> Emitter<R> for WebviewWindow<R> {
+    fn emit<S: serde::Serialize + Clone>(&self, event: &str, payload: S) -> Result<()> {
+        let _ = (event, serde_json::to_string(&payload).ok());
+        Ok(())
+    }
+}
+
+pub struct WebviewWindowBuilder<R: Runtime = Wry> {
+    label: String,
+    _rt: PhantomData<R>,
+}
+
+impl<R: Runtime> WebviewWindowBuilder<R> {
+    pub fn new<L: Into<String>>(_app: &AppHandle<R>, label: L, _url: WebviewUrl) -> Self {
+        Self {
+            label: label.into(),
+            _rt: PhantomData,
+        }
+    }
+    pub fn title(self, _title: &str) -> Self {
+        self
+    }
+    pub fn inner_size(self, _w: f64, _h: f64) -> Self {
+        self
+    }
+    pub fn min_inner_size(self, _w: f64, _h: f64) -> Self {
+        self
+    }
+    pub fn build(self) -> Result<WebviewWindow<R>> {
+        Ok(WebviewWindow {
+            label: self.label,
+            _rt: PhantomData,
+        })
+    }
 }
 
 pub struct State<'r, T: Send + Sync + 'static> {
@@ -121,6 +186,23 @@ impl<R: Runtime> Default for App<R> {
     }
 }
 
+impl<R: Runtime> Manager<R> for AppHandle<R> {
+    fn path(&self) -> PathResolver {
+        PathResolver {
+            base: (*self.config_dir).clone(),
+        }
+    }
+    fn manage<T: Send + Sync + 'static>(&self, _state: T) -> bool {
+        true
+    }
+    fn state<T: Send + Sync + 'static>(&self) -> State<'_, T> {
+        panic!("shim 不支持从 AppHandle 取状态")
+    }
+    fn get_webview_window(&self, _label: &str) -> Option<WebviewWindow<R>> {
+        None
+    }
+}
+
 impl<R: Runtime> Manager<R> for App<R> {
     fn path(&self) -> PathResolver {
         PathResolver {
@@ -137,6 +219,10 @@ impl<R: Runtime> Manager<R> for App<R> {
     }
     fn state<T: Send + Sync + 'static>(&self) -> State<'_, T> {
         panic!("shim 不支持从 App 取状态")
+    }
+
+    fn get_webview_window(&self, _label: &str) -> Option<WebviewWindow<R>> {
+        None
     }
 }
 

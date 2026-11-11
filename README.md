@@ -17,6 +17,7 @@
 | 3 | 分组 + 左侧连接列表 + 右侧终端，多连接并行 | ✅ 左侧为分组树 / 连接列表 / 搜索，右侧为多标签终端，标签可并行打开多个会话 |
 | 4 | 字号调整 + 主题切换（内置多套美观主题） | ✅ 设置面板可调字号、行高、字体、光标闪烁、回滚缓冲；内置 **8 套主题**（番茄暗夜 / Nord / Dracula / Gruvbox / One Dark / 东京夜色 / 暖阳浅色 / 素白 GitHub） |
 | 5 | 支持操作系统本地终端 | ✅ 侧边栏「本地终端」或在标签栏 `+` 新建，Windows 自动选 `pwsh`/`powershell`/`cmd`，Linux/macOS 使用 `$SHELL` |
+| 7 | 串口连接（终端交互） | ✅ 串口配置管理（端口 / 波特率 / 数据位 / 校验 / 停止位 / 流控）+ 终端交互；端口自动枚举（Windows COM、Linux `/dev/ttyUSB*`、macOS `cu.*`），也可手动填设备路径；**串口不提供文件传输** |
 | 6 | 连接信息云同步（自建 Docker 服务） | ✅ 自建账号体系（邮箱 + 密码，JWT），`server/` 一键 Docker 部署；**客户端先加密再上传，服务端看不到明文**，多设备按修改时间自动合并 |
 
 其他细节：
@@ -71,7 +72,7 @@ TomatoSSH/
 | Rust ≥ 1.82 | 后端（`rustup` 安装） |
 | Windows | 安装 **Visual Studio Build Tools（C++ 生成工具）** + **WebView2 Runtime**（Win10/11 一般自带） |
 | macOS | `xcode-select --install` |
-| Ubuntu / Debian | `sudo apt install libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev` |
+| Ubuntu / Debian | `sudo apt install libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev libudev-dev pkg-config`（`libudev-dev` 是串口枚举需要的） |
 
 ### 本地开发
 
@@ -200,6 +201,11 @@ python scripts/print-version.py    # 打印四处版本号核对
 5. **本地终端**：侧边栏「本地终端」或标签栏 `+`。
 6. **设置**：右上角齿轮 → 主题 / 字体 / 字号 / 行高 / 回滚缓冲 / 光标闪烁，改动对所有已打开终端立即生效。
 7. **云同步**：右上角云图标 → 填服务器地址 + 邮箱 + 密码 → 注册或登录 → 「立即双向同步」。
+8. **串口终端**：侧边栏底部 🔌 按钮（或列表里串口项的右键菜单）→ 新建串口连接：
+   - 自动枚举本机串口（Windows `COM3` / Linux `/dev/ttyUSB0` / macOS `/dev/cu.usbserial-*`），列表为空时可手动输入设备路径；
+   - 参数：波特率（常用值下拉 + 自定义）、数据位 5~8、校验 none/odd/even、停止位 1/2、流控 无/软件(XON/XOFF)/硬件(RTS/CTS)；
+   - 双击串口项即打开独立终端标签，收发数据直接进 xterm；**串口只做终端交互，不提供文件传输**；
+   - 配置同样存在加密保险库里（无密码字段），并会随云同步一起同步。
 
 ---
 
@@ -284,6 +290,7 @@ server {
 - SSH 认证目前支持 **密码** 与 **私钥**；`ssh-agent` 转发、跳板机（ProxyJump）、端口转发尚未实现（数据模型已预留）。
 - SFTP 已支持**文件夹递归上传 / 下载 / 远程互传 / 递归删除**、单目录 4 路并发、**断点续传 + 失败自动重试 + 后台传输队列（持久化）**，并保留文件修改时间/权限（**目录自身**的 mtime 不保留）。
 - 文件管理器是独立窗口，但**关闭主窗口会一起退出**（暂不支持"关掉终端只留文件窗口"）。
+- 串口：只做终端交互（无文件传输）；不支持手动拉 DTR/RTS、不支持十六进制收发视图、不支持保存会话日志。
 - 同步为「整库覆盖 + 按时间合并」，尚未做字段级冲突交互提示。
 - 还没有会话历史 / 命令片段 / 密钥管理（Termius 的 Snippets、Vault）等增值功能。
 
@@ -323,6 +330,7 @@ cargo run --bin smoke        # 完整冒烟（额外覆盖本地 PTY 终端与 S
 | 前端类型检查 + 生产构建（`pnpm build`） | ✅ 通过（`tsc --noEmit` + vite 产物 620 kB / gzip 174 kB） |
 | 后端全部模块编译（`tools/verify` 复用真实源码 + 真实 russh / russh-sftp / portable-pty / reqwest） | ✅ 通过，无错误无警告 |
 | 前后端 IPC 契约（35 个命令的命令名 / 参数名 / 注册表） | ✅ 通过（`python scripts/check_contract.py`） |
+| 串口单元测试（`cargo test --lib serial`） | ✅ 3 项全过：参数枚举解析（数据位/校验/停止位/流控的合法与非法值）、端口枚举不 panic、打开不存在串口返回带端口名的中文错误且非法参数在碰硬件前被拒 |
 | 同步服务端编译 | ✅ 通过 |
 | 同步服务端运行 + 接口联调（注册 / 登录 / 密码错误 / 上传 / 拉取 / 版本冲突 409 / 重复注册 409） | ✅ 全部符合预期 |
 | Windows Release 编译（`rustc 1.99.1` + MSVC 14.44 + Windows SDK 10.0.26100） | ✅ 通过（6.5 MB 单文件 exe） |

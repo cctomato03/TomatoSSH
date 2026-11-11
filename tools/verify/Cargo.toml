@@ -22,6 +22,7 @@ base64 = "0.22"
 russh = { version = "0.65", default-features = false, features = ["ring", "flate2", "rsa"] }
 russh-sftp = "3"
 portable-pty = "0.9"
+serialport = "4"
 
 aes-gcm = "0.10"
 sha2 = "0.10"
@@ -30,6 +31,7 @@ pbkdf2 = { version = "0.12", default-features = false, features = ["hmac"] }
 rand = "0.8"
 
 dirs = "6"
+filetime = "0.2"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12", "logging"] }
 

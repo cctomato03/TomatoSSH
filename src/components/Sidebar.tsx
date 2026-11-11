@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import {
+  Cable,
   ChevronDown,
   ChevronRight,
   FolderClosed,
@@ -17,12 +18,13 @@ import {
   Copy,
   Server,
 } from "lucide-react";
-import type { GroupRecord, HostRecord } from "../lib/types";
+import type { GroupRecord, HostRecord, SerialProfile } from "../lib/types";
 import { useTabs } from "../store/useTabs";
 import { useVault } from "../store/useVault";
 import { api } from "../lib/api";
 import { useUi } from "../store/useUi";
 import { ContextMenu, type CtxItem } from "./ContextMenu";
+import { SerialDialog } from "./SerialDialog";
 
 interface MenuState {
   x: number;
@@ -32,6 +34,8 @@ interface MenuState {
 
 export function Sidebar() {
   const hosts = useVault((s) => s.hosts);
+  const serials = useVault((s) => s.serials);
+  const deleteSerial = useVault((s) => s.deleteSerial);
   const groups = useVault((s) => s.groups);
   const saveHost = useVault((s) => s.saveHost);
   const deleteHost = useVault((s) => s.deleteHost);
@@ -41,6 +45,7 @@ export function Sidebar() {
   const activeId = useTabs((s) => s.activeId);
   const activeHostId = useMemo(() => tabs.find((t) => t.id === activeId)?.hostId ?? null, [tabs, activeId]);
   const openSshTab = useTabs((s) => s.openSshTab);
+  const openSerialTab = useTabs((s) => s.openSerialTab);
   const openLocalTab = useTabs((s) => s.openLocalTab);
 
   const openHostDialog = useUi((s) => s.openHost);
@@ -51,6 +56,9 @@ export function Sidebar() {
   const [query, setQuery] = useState("");
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [menu, setMenu] = useState<MenuState | null>(null);
+  const [serialDialog, setSerialDialog] = useState<{ open: boolean; profile: SerialProfile | null }>(
+    { open: false, profile: null },
+  );
 
   const activeHostIds = useMemo(
     () => new Set(tabs.filter((t) => t.kind === "ssh" && t.hostId).map((t) => t.hostId as string)),
@@ -138,6 +146,36 @@ export function Sidebar() {
           onClick: async () => {
             if (window.confirm(`确认删除连接「${host.label || host.host}」？`)) {
               await deleteHost(host.id);
+            }
+          },
+        },
+      ],
+    });
+  };
+
+  const connectSerial = (profile: SerialProfile) => {
+    openSerialTab(profile);
+  };
+
+  const serialMenu = (profile: SerialProfile, x: number, y: number) => {
+    setMenu({
+      x,
+      y,
+      items: [
+        { label: "打开串口终端", icon: <Play size={13} />, onClick: () => connectSerial(profile) },
+        { kind: "sep" },
+        {
+          label: "编辑",
+          icon: <Pencil size={13} />,
+          onClick: () => setSerialDialog({ open: true, profile }),
+        },
+        {
+          label: "删除",
+          danger: true,
+          icon: <Trash2 size={13} />,
+          onClick: async () => {
+            if (window.confirm(`确认删除串口「${profile.label || profile.portName}」？`)) {
+              await deleteSerial(profile.id);
             }
           },
         },
@@ -329,7 +367,43 @@ export function Sidebar() {
             <div style={{ height: 6 }} />
             {childrenOf(null).map((g) => renderGroup(g, 0))}
             {hostsOf(null).map((h) => renderHost(h, 0))}
-            {hosts.length === 0 && groups.length === 0 && (
+
+            {serials.length > 0 && <div className="ctx-label" style={{ marginTop: 10 }}>串口</div>}
+            {serials.map((s) => (
+              <div
+                key={s.id}
+                className="tree-row"
+                style={{ paddingLeft: 8 }}
+                onDoubleClick={() => connectSerial(s)}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  serialMenu(s, e.clientX, e.clientY);
+                }}
+                title={`${s.portName} · ${s.baudRate} ${s.dataBits}${s.parity[0].toUpperCase()}${s.stopBits}`}
+              >
+                <Cable size={13} style={{ color: "var(--text-muted)" }} />
+                <div className="tree-host">
+                  <span className="tree-label">{s.label || s.portName}</span>
+                  <span className="tree-sub">
+                    {s.portName} · {s.baudRate} {s.dataBits}
+                    {s.parity[0].toUpperCase()}
+                    {s.stopBits}
+                  </span>
+                </div>
+                <button
+                  className="tree-play"
+                  title="打开串口终端"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    connectSerial(s);
+                  }}
+                >
+                  <Play size={13} />
+                </button>
+              </div>
+            ))}
+
+            {hosts.length === 0 && groups.length === 0 && serials.length === 0 && (
               <div className="empty-state" style={{ padding: "28px 12px" }}>
                 <Server size={22} />
                 <div>还没有连接</div>
@@ -349,6 +423,13 @@ export function Sidebar() {
         <button className="btn" style={{ flex: 1 }} onClick={() => openGroupDialog(null, null)}>
           <FolderPlus size={13} /> 分组
         </button>
+        <button
+          className="icon-btn"
+          title="新建串口连接"
+          onClick={() => setSerialDialog({ open: true, profile: null })}
+        >
+          <Cable size={14} />
+        </button>
         <button className="icon-btn" title="打开文件管理器" onClick={() => api.openFileManager().catch((e) => console.error(e))}>
           <FolderOpen size={14} />
         </button>
@@ -358,6 +439,13 @@ export function Sidebar() {
       </div>
 
       {menu && <ContextMenu x={menu.x} y={menu.y} items={menu.items} onClose={() => setMenu(null)} />}
+
+      {serialDialog.open && (
+        <SerialDialog
+          profile={serialDialog.profile}
+          onClose={() => setSerialDialog({ open: false, profile: null })}
+        />
+      )}
     </aside>
   );
 }

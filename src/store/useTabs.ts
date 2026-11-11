@@ -1,11 +1,12 @@
 import { create } from "zustand";
 import { api } from "../lib/api";
-import type { HostRecord, TabRecord } from "../lib/types";
+import type { HostRecord, SerialProfile, TabRecord } from "../lib/types";
 
 interface TabsState {
   tabs: TabRecord[];
   activeId: string | null;
   openSshTab: (host: HostRecord) => string;
+  openSerialTab: (profile: SerialProfile) => string;
   openLocalTab: (title?: string) => string;
   closeTab: (id: string) => void;
   setActive: (id: string) => void;
@@ -14,7 +15,7 @@ interface TabsState {
 
 const uid = () => crypto.randomUUID();
 
-export const useTabs = create<TabsState>((set) => ({
+export const useTabs = create<TabsState>((set, get) => ({
   tabs: [],
   activeId: null,
 
@@ -25,6 +26,25 @@ export const useTabs = create<TabsState>((set) => ({
       kind: "ssh",
       title: host.label || `${host.username}@${host.host}`,
       hostId: host.id,
+      status: "connecting",
+    };
+    set((s) => ({ tabs: [...s.tabs, tab], activeId: id }));
+    return id;
+  },
+
+  openSerialTab(profile) {
+    const existing = get().tabs.find((t) => t.kind === "serial" && t.serialId === profile.id && t.status !== "error");
+    if (existing) {
+      set({ activeId: existing.id });
+      return existing.id;
+    }
+    const id = uid();
+    const tab: TabRecord = {
+      id,
+      kind: "serial",
+      title: profile.label || `${profile.portName}@${profile.baudRate}`,
+      hostId: null,
+      serialId: profile.id,
       status: "connecting",
     };
     set((s) => ({ tabs: [...s.tabs, tab], activeId: id }));

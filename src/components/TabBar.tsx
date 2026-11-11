@@ -1,4 +1,4 @@
-import { FolderTree, Plus, TerminalSquare, X, FolderOpen } from "lucide-react";
+import { Cable, FolderTree, Plus, TerminalSquare, X, FolderOpen } from "lucide-react";
 import { api } from "../lib/api";
 import { useTabs } from "../store/useTabs";
 import { useVault } from "../store/useVault";
@@ -27,7 +27,13 @@ export function TabBar() {
             }}
             title={host ? `${host.username}@${host.host}` : tab.title}
           >
-            {tab.kind === "local" ? <TerminalSquare size={13} /> : <FolderTree size={13} />}
+            {tab.kind === "local" ? (
+              <TerminalSquare size={13} />
+            ) : tab.kind === "serial" ? (
+              <Cable size={13} />
+            ) : (
+              <FolderTree size={13} />
+            )}
             <span className="tab-title">{tab.title}</span>
             {tab.status === "connecting" && <span className="dot idle" />}
             {tab.status === "connected" && <span className="dot online" />}

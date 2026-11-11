@@ -59,6 +59,7 @@ jobs:
             librsvg2-dev \
             patchelf \
             libxdo-dev \
+            libudev-dev pkg-config \
             build-essential curl wget file libssl-dev
 
       # 注意：不要在这里写 version，否则会与 package.json 的 "packageManager" 冲突，

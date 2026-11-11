@@ -4,7 +4,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::crypto;
 use crate::error::{Error, Result};
-use crate::models::{now_ms, Group, GroupDraft, Host, HostDraft, Snapshot, VaultData};
+use crate::models::{
+    now_ms, Group, GroupDraft, Host, HostDraft, SerialProfile, Snapshot, VaultData,
+};
 
 /// 参与云同步的载荷（不含本机密钥，连接密码在整包加密之内）
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
@@ -12,6 +14,7 @@ use crate::models::{now_ms, Group, GroupDraft, Host, HostDraft, Snapshot, VaultD
 pub struct SyncPayload {
     pub hosts: Vec<Host>,
     pub groups: Vec<Group>,
+    pub serials: Vec<SerialProfile>,
     pub updated_at: i64,
 }
 
@@ -67,9 +70,13 @@ impl VaultStore {
         hosts.sort_by_key(|h| h.label.to_lowercase());
         let mut groups: Vec<Group> = self.data.groups.iter().filter(|g| !g.deleted).cloned().collect();
         groups.sort_by_key(|g| (g.sort_order, g.name.to_lowercase()));
+        let mut serials: Vec<SerialProfile> =
+            self.data.serials.iter().filter(|s| !s.deleted).cloned().collect();
+        serials.sort_by_key(|s| s.label.to_lowercase());
         Snapshot {
             hosts,
             groups,
+            serials,
             settings: self.data.settings.clone(),
         }
     }
@@ -219,8 +226,56 @@ impl VaultStore {
         self.save()
     }
 
-    pub fn set_settings(&mut self, settings: crate::models::Settings) -> Result<()> {
-        self.data.settings = settings;
+    pub fn upsert_serial(&mut self, mut draft: SerialProfile) -> Result<SerialProfile> {
+        if draft.port_name.trim().is_empty() {
+            return Err(Error::msg("请选择或填写串口设备"));
+        }
+        if draft.baud_rate == 0 {
+            return Err(Error::msg("波特率必须大于 0"));
+        }
+        let now = now_ms();
+        draft.port_name = draft.port_name.trim().to_string();
+        if draft.label.trim().is_empty() {
+            draft.label = format!("{} @ {}", draft.port_name, draft.baud_rate);
+        }
+        match self.data.serials.iter_mut().find(|s| s.id == draft.id && !s.id.is_empty()) {
+            Some(existing) => {
+                draft.updated_at = now;
+                draft.deleted = false;
+                *existing = draft.clone();
+            }
+            None => {
+                draft.id = uuid::Uuid::new_v4().to_string();
+                draft.updated_at = now;
+                draft.deleted = false;
+                self.data.serials.push(draft.clone());
+            }
+        }
+        self.save()?;
+        Ok(draft)
+    }
+
+    pub fn delete_serial(&mut self, id: &str) -> Result<()> {
+        let now = now_ms();
+        for s in self.data.serials.iter_mut() {
+            if s.id == id {
+                s.deleted = true;
+                s.updated_at = now;
+            }
+        }
+        self.save()
+    }
+
+    pub fn serial(&self, id: &str) -> Result<SerialProfile> {
+        self.data
+            .serials
+            .iter()
+            .find(|s| s.id == id && !s.deleted)
+            .cloned()
+            .ok_or_else(|| Error::msg(format!("找不到串口配置 {id}")))
+    }
+
+    pub fn set_settings(&mut self, settings: crate::models::Settings) -> Result<()> {        self.data.settings = settings;
         self.save()
     }
 
@@ -246,6 +301,7 @@ impl VaultStore {
         SyncPayload {
             hosts: self.data.hosts.clone(),
             groups: self.data.groups.clone(),
+            serials: self.data.serials.clone(),
             updated_at: now_ms(),
         }
     }
@@ -279,6 +335,21 @@ impl VaultStore {
                 }
                 None => {
                     self.data.groups.push(rg);
+                    changed += 1;
+                }
+            }
+        }
+
+        for rs in remote.serials {
+            match self.data.serials.iter_mut().find(|s| s.id == rs.id) {
+                Some(local) => {
+                    if rs.updated_at > local.updated_at {
+                        *local = rs;
+                        changed += 1;
+                    }
+                }
+                None => {
+                    self.data.serials.push(rs);
                     changed += 1;
                 }
             }

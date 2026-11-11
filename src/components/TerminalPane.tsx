@@ -147,6 +147,12 @@ export function TerminalPane({ tab, active }: Props) {
           const banner = await api.sshOpen(tab.id, tab.hostId, cols, rows);
           patchTab(tab.id, { status: "connected" });
           if (banner) term.writeln(`\x1b[38;5;244m${banner}\x1b[0m`);
+        } else if (tab.kind === "serial" && tab.serialId) {
+          patchTab(tab.id, { status: "connecting" });
+          term.writeln(`\x1b[38;5;244m正在打开串口 ...\x1b[0m`);
+          const banner = await api.serialOpen(tab.id, tab.serialId);
+          patchTab(tab.id, { status: "connected" });
+          if (banner) term.writeln(`\x1b[38;5;244m${banner}\x1b[0m`);
         } else {
           patchTab(tab.id, { status: "connecting" });
           const shellInfo = await api.localOpen(tab.id, cols, rows, tab.cwd ?? null);
