@@ -100,3 +100,65 @@ pub fn remove(path: &str) -> Result<()> {
 pub fn rename(from: &str, to: &str) -> Result<()> {
     std::fs::rename(from, to).map_err(|e| Error::msg(format!("重命名失败：{e}")))
 }
+
+/// 本地复制（文件或整个文件夹），尽量保留时间戳
+pub fn copy(from: &str, to: &str) -> Result<()> {
+    let src = PathBuf::from(from);
+    let dst = PathBuf::from(to);
+    if src.is_dir() {
+        copy_dir(&src, &dst)
+    } else {
+        copy_file(&src, &dst)
+    }
+}
+
+fn copy_file(from: &std::path::Path, to: &std::path::Path) -> Result<()> {
+    if let Some(parent) = to.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|e| Error::msg(format!("创建本地文件夹失败：{e}")))?;
+    }
+    std::fs::copy(from, to).map_err(|e| {
+        Error::msg(format!(
+            "复制失败（{} → {}）：{e}",
+            from.display(),
+            to.display()
+        ))
+    })?;
+    if let Ok(meta) = std::fs::metadata(from) {
+        if let Ok(mtime) = meta.modified() {
+            let _ = filetime::set_file_mtime(to, filetime::FileTime::from_system_time(mtime));
+        }
+    }
+    Ok(())
+}
+
+fn copy_dir(from: &std::path::Path, to: &std::path::Path) -> Result<()> {
+    std::fs::create_dir_all(to).map_err(|e| Error::msg(format!("创建本地文件夹失败：{e}")))?;
+    let mut stack = vec![(from.to_path_buf(), to.to_path_buf())];
+    while let Some((src_dir, dst_dir)) = stack.pop() {
+        let read = std::fs::read_dir(&src_dir)
+            .map_err(|e| Error::msg(format!("读取本地文件夹失败（{}）：{e}", src_dir.display())))?;
+        for entry in read.flatten() {
+            let child_src = entry.path();
+            let child_dst = dst_dir.join(entry.file_name());
+            let link_meta = match std::fs::symlink_metadata(&child_src) {
+                Ok(m) => m,
+                Err(_) => continue,
+            };
+            if link_meta.is_dir() {
+                std::fs::create_dir_all(&child_dst).map_err(|e| {
+                    Error::msg(format!("创建本地文件夹失败（{}）：{e}", child_dst.display()))
+                })?;
+                stack.push((child_src, child_dst));
+            } else {
+                copy_file(&child_src, &child_dst)?;
+            }
+        }
+    }
+    if let Ok(meta) = std::fs::metadata(from) {
+        if let Ok(mtime) = meta.modified() {
+            let _ = filetime::set_file_mtime(to, filetime::FileTime::from_system_time(mtime));
+        }
+    }
+    Ok(())
+}

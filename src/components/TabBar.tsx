@@ -1,4 +1,5 @@
-import { FolderTree, Plus, TerminalSquare, X, Files } from "lucide-react";
+import { FolderTree, Plus, TerminalSquare, X, FolderOpen } from "lucide-react";
+import { api } from "../lib/api";
 import { useTabs } from "../store/useTabs";
 import { useVault } from "../store/useVault";
 
@@ -8,7 +9,6 @@ export function TabBar() {
   const setActive = useTabs((s) => s.setActive);
   const closeTab = useTabs((s) => s.closeTab);
   const openLocalTab = useTabs((s) => s.openLocalTab);
-  const toggleFiles = useTabs((s) => s.toggleFiles);
   const hosts = useVault((s) => s.hosts);
 
   const active = tabs.find((t) => t.id === activeId);
@@ -55,11 +55,10 @@ export function TabBar() {
       {active?.kind === "ssh" && (
         <button
           className="tab-add"
-          title="文件传输（SFTP）"
-          onClick={() => toggleFiles(active.id)}
-          style={active.showFiles ? { color: "var(--accent)" } : undefined}
+          title="在独立窗口打开文件管理器（可本地 ⇄ 远程、远程 ⇄ 远程互传）"
+          onClick={() => api.openFileManager(active.hostId).catch((e) => console.error(e))}
         >
-          <Files size={15} />
+          <FolderOpen size={15} />
         </button>
       )}
     </div>

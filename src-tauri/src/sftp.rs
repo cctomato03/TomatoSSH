@@ -1,11 +1,14 @@
 use std::collections::{HashMap, HashSet};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use russh::client::Handle;
 use russh_sftp::client::SftpSession;
+use russh_sftp::protocol::FileAttributes;
 use tauri::{AppHandle, Emitter};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::task::JoinSet;
 
 use crate::error::{Error, IntoAppError, Result};
 use crate::models::{FileEntry, Host, TransferProgress};
@@ -13,10 +16,13 @@ use crate::ssh::{connect_and_auth, ClientHandler};
 
 /// 传输分片大小
 const CHUNK: usize = 64 * 1024;
+/// 单个目录内的并发上传/下载路数
+const CONCURRENCY: usize = 4;
 
 pub struct SftpEntry {
     pub session: Arc<SftpSession>,
-    /// 保活：drop 掉 handle 会关闭连接
+    /// 仅用于保活：drop 掉 handle 会关闭连接
+    #[allow(dead_code)]
     pub handle: Handle<ClientHandler>,
 }
 
@@ -42,6 +48,29 @@ impl TransferSink for AppHandle {
     }
 }
 
+/// 远程文件的属性（用于传输后还原时间戳 / 权限）
+#[derive(Clone, Debug, Default)]
+pub struct FileMeta {
+    pub mtime: Option<u32>,
+    pub permissions: Option<u32>,
+}
+
+impl FileMeta {
+    fn from_attrs(attrs: &FileAttributes) -> Self {
+        Self {
+            mtime: attrs.mtime,
+            permissions: attrs.permissions,
+        }
+    }
+}
+
+/// 远程目录扫描结果
+struct RemoteFile {
+    path: String,
+    size: u64,
+    meta: FileMeta,
+}
+
 fn entry_from_dir(entry: russh_sftp::client::fs::DirEntry) -> FileEntry {
     let meta = entry.metadata();
     let ftype = meta.file_type();
@@ -58,7 +87,7 @@ fn entry_from_dir(entry: russh_sftp::client::fs::DirEntry) -> FileEntry {
         is_symlink: ftype.is_symlink(),
         size: meta.len(),
         modified,
-        mode: 0,
+        mode: meta.permissions.unwrap_or(0),
     }
 }
 
@@ -99,7 +128,8 @@ fn basename_any(path: &str) -> String {
 /// 跟随普通文件；遇到"指向目录的符号链接"直接跳过，避免循环。
 fn scan_local_dir(dir: &str) -> Result<Vec<(String, String, u64)>> {
     let mut out = Vec::new();
-    let mut stack: Vec<(std::path::PathBuf, String)> = vec![(std::path::PathBuf::from(dir), String::new())];
+    let mut stack: Vec<(std::path::PathBuf, String)> =
+        vec![(std::path::PathBuf::from(dir), String::new())];
     while let Some((abs, rel)) = stack.pop() {
         let read = std::fs::read_dir(&abs)
             .map_err(|e| Error::msg(format!("读取本地文件夹失败（{}）：{e}", abs.display())))?;
@@ -139,8 +169,8 @@ fn scan_local_dir(dir: &str) -> Result<Vec<(String, String, u64)>> {
     Ok(out)
 }
 
-/// 递归列出远程目录下的所有文件：(完整路径, 大小)
-async fn scan_remote_dir(session: &SftpSession, dir: &str) -> Result<Vec<(String, u64)>> {
+/// 递归列出远程目录下的所有文件
+async fn scan_remote_dir(session: &SftpSession, dir: &str) -> Result<Vec<RemoteFile>> {
     let mut files = Vec::new();
     let mut stack = vec![dir.to_string()];
     while let Some(cur) = stack.pop() {
@@ -158,11 +188,15 @@ async fn scan_remote_dir(session: &SftpSession, dir: &str) -> Result<Vec<(String
             if meta.file_type().is_dir() {
                 stack.push(path);
             } else {
-                files.push((path, meta.len()));
+                files.push(RemoteFile {
+                    path,
+                    size: meta.len(),
+                    meta: FileMeta::from_attrs(&meta),
+                });
             }
         }
     }
-    files.sort_by(|a, b| a.0.cmp(&b.0));
+    files.sort_by(|a, b| a.path.cmp(&b.path));
     Ok(files)
 }
 
@@ -194,6 +228,44 @@ async fn ensure_remote_dir(
         created.insert(d);
     }
     Ok(())
+}
+
+fn new_progress(
+    name: &str,
+    direction: &str,
+    total: u64,
+    message: Option<String>,
+) -> TransferProgress {
+    TransferProgress {
+        id: uuid::Uuid::new_v4().to_string(),
+        file_name: name.to_string(),
+        direction: direction.to_string(),
+        done: 0,
+        total,
+        status: "running".into(),
+        message,
+    }
+}
+
+fn finish_progress(
+    sink: &dyn TransferSink,
+    progress: &mut TransferProgress,
+    result: Result<()>,
+) -> Result<()> {
+    match result {
+        Ok(()) => {
+            progress.status = "done".into();
+            progress.message = None;
+            sink.progress(progress);
+            Ok(())
+        }
+        Err(e) => {
+            progress.status = "error".into();
+            progress.message = Some(e.to_string());
+            sink.progress(progress);
+            Err(e)
+        }
+    }
 }
 
 impl SftpManager {
@@ -244,12 +316,12 @@ impl SftpManager {
             .unwrap_or_else(|_| "/".to_string()))
     }
 
-    fn session(&self, id: &str) -> Result<Arc<SftpSession>> {
+    pub fn session(&self, id: &str) -> Result<Arc<SftpSession>> {
         self.sessions
             .lock()?
             .get(id)
             .map(|e| e.session.clone())
-            .ok_or_else(|| Error::msg("SFTP 会话不存在，请重新打开文件面板"))
+            .ok_or_else(|| Error::msg("SFTP 会话不存在，请重新打开文件管理器"))
     }
 
     pub fn close(&self, id: &str) {
@@ -294,7 +366,6 @@ impl SftpManager {
                 .map_err(|e| Error::msg(format!("删除远程文件失败：{e}")));
         }
 
-        // 先收集整棵树，再自底向上删除
         let mut dirs: Vec<String> = Vec::new();
         let mut files: Vec<String> = Vec::new();
         let mut stack = vec![path.to_string()];
@@ -357,62 +428,45 @@ impl SftpManager {
         let name = basename_any(local_path);
 
         if !meta.is_dir() {
-            return self
-                .upload_one(sink, &session, local_path, remote_path, &name)
-                .await;
+            return upload_one(sink, &session, local_path, remote_path, &name).await;
         }
 
-        // 目录：先扫描再逐个上传
+        // 目录：先通知"扫描中"，再扫描
+        let mut progress = new_progress(&format!("{name}/"), "upload", 0, Some("扫描文件夹…".into()));
+        sink.progress(&progress);
         let files = scan_local_dir(local_path)?;
         let total: u64 = files.iter().map(|f| f.2).sum();
-        let mut progress = TransferProgress {
-            id: uuid::Uuid::new_v4().to_string(),
-            file_name: format!("{name}/"),
-            direction: "upload".into(),
-            done: 0,
-            total,
-            status: "running".into(),
-            message: Some(format!("共 {} 个文件", files.len())),
-        };
+        progress.total = total;
+        progress.message = Some(if files.is_empty() {
+            "空文件夹".into()
+        } else {
+            format!("共 {} 个文件，{CONCURRENCY} 路并发", files.len())
+        });
         sink.progress(&progress);
 
-        let mut created: HashSet<String> = HashSet::new();
         let root = remote_path.trim_end_matches('/').to_string();
-        let result = async {
-            ensure_remote_dir(&session, &root, &mut created).await?;
-            for (abs, rel, _size) in files.iter() {
-                let dst = join_remote(&root, rel);
-                if let Some(parent) = dst.rfind('/').map(|i| dst[..i].to_string()) {
-                    ensure_remote_dir(&session, &parent, &mut created).await?;
-                }
-                upload_file_stream(&session, abs, &dst, sink, &mut progress).await?;
+        let mut created: HashSet<String> = HashSet::new();
+        ensure_remote_dir(&session, &root, &mut created).await?;
+        // 预先建好所有子目录（顺序执行，很快），再并发传文件
+        for (_, rel, _) in files.iter() {
+            let dst = join_remote(&root, rel);
+            if let Some(parent) = dst.rfind('/').map(|i| dst[..i].to_string()) {
+                ensure_remote_dir(&session, &parent, &mut created).await?;
             }
-            Ok::<(), Error>(())
         }
-        .await;
-        finish_progress(sink, &mut progress, result)
-    }
 
-    async fn upload_one(
-        &self,
-        sink: &dyn TransferSink,
-        session: &SftpSession,
-        local_path: &str,
-        remote_path: &str,
-        name: &str,
-    ) -> Result<()> {
-        let mut progress = TransferProgress {
-            id: uuid::Uuid::new_v4().to_string(),
-            file_name: name.to_string(),
-            direction: "upload".into(),
-            done: 0,
-            total: std::fs::metadata(local_path).map(|m| m.len()).unwrap_or(0),
-            status: "running".into(),
-            message: None,
-        };
-        sink.progress(&progress);
-        let result = upload_file_stream(session, local_path, remote_path, sink, &mut progress).await;
-        finish_progress(sink, &mut progress, result)
+        let counter = Arc::new(AtomicU64::new(0));
+        // 复用 run_concurrent 的计数：这里把 counter 通过闭包注入
+        let tasks: Vec<_> = files
+            .into_iter()
+            .map(|(abs, rel, _)| {
+                let session = session.clone();
+                let counter = counter.clone();
+                let dst = join_remote(&root, &rel);
+                async move { upload_file_counted(&session, &abs, &dst, &counter).await }
+            })
+            .collect();
+        run_concurrent_with_counter(sink, &mut progress, total, tasks, counter).await
     }
 
     // ------------------------------------------------------------ 下载
@@ -433,79 +487,63 @@ impl SftpManager {
         let name = basename_any(remote_path);
 
         if !meta.file_type().is_dir() {
-            return self
-                .download_one(sink, &session, remote_path, local_path, &name)
-                .await;
+            return download_one(
+                sink,
+                &session,
+                remote_path,
+                local_path,
+                &name,
+                FileMeta::from_attrs(&meta),
+            )
+            .await;
         }
 
+        let mut progress =
+            new_progress(&format!("{name}/"), "download", 0, Some("扫描远程文件夹…".into()));
+        sink.progress(&progress);
         let files = scan_remote_dir(&session, remote_path).await?;
-        let total: u64 = files.iter().map(|f| f.1).sum();
-        let mut progress = TransferProgress {
-            id: uuid::Uuid::new_v4().to_string(),
-            file_name: format!("{name}/"),
-            direction: "download".into(),
-            done: 0,
-            total,
-            status: "running".into(),
-            message: Some(format!("共 {} 个文件", files.len())),
-        };
+        let total: u64 = files.iter().map(|f| f.size).sum();
+        progress.total = total;
+        progress.message = Some(if files.is_empty() {
+            "空文件夹".into()
+        } else {
+            format!("共 {} 个文件，{CONCURRENCY} 路并发", files.len())
+        });
         sink.progress(&progress);
 
         let root = std::path::PathBuf::from(local_path);
-        let result = async {
-            std::fs::create_dir_all(&root)
-                .map_err(|e| Error::msg(format!("创建本地文件夹失败（{}）：{e}", root.display())))?;
-            for (remote, _size) in files.iter() {
-                // 远程路径相对根目录的部分
-                let rel = remote
-                    .strip_prefix(remote_path)
-                    .unwrap_or(remote)
-                    .trim_start_matches('/');
-                let target = root.join(rel.replace('/', &std::path::MAIN_SEPARATOR.to_string()));
-                if let Some(parent) = target.parent() {
-                    std::fs::create_dir_all(parent).map_err(|e| {
-                        Error::msg(format!("创建本地文件夹失败（{}）：{e}", parent.display()))
-                    })?;
-                }
-                download_file_stream(
-                    &session,
-                    remote,
-                    &target.to_string_lossy(),
-                    sink,
-                    &mut progress,
-                )
-                .await?;
-            }
-            Ok::<(), Error>(())
-        }
-        .await;
-        finish_progress(sink, &mut progress, result)
-    }
+        std::fs::create_dir_all(&root)
+            .map_err(|e| Error::msg(format!("创建本地文件夹失败（{}）：{e}", root.display())))?;
 
-    async fn download_one(
-        &self,
-        sink: &dyn TransferSink,
-        session: &SftpSession,
-        remote_path: &str,
-        local_path: &str,
-        name: &str,
-    ) -> Result<()> {
-        let mut progress = TransferProgress {
-            id: uuid::Uuid::new_v4().to_string(),
-            file_name: name.to_string(),
-            direction: "download".into(),
-            done: 0,
-            total: session
-                .metadata(remote_path)
-                .await
-                .map(|m| m.len())
-                .unwrap_or(0),
-            status: "running".into(),
-            message: None,
-        };
-        sink.progress(&progress);
-        let result = download_file_stream(session, remote_path, local_path, sink, &mut progress).await;
-        finish_progress(sink, &mut progress, result)
+        let counter = Arc::new(AtomicU64::new(0));
+        let mut prepared = Vec::new();
+        for f in files {
+            let rel = f
+                .path
+                .strip_prefix(remote_path)
+                .unwrap_or(&f.path)
+                .trim_start_matches('/')
+                .replace('/', &std::path::MAIN_SEPARATOR.to_string());
+            let target = root.join(rel);
+            if let Some(parent) = target.parent() {
+                std::fs::create_dir_all(parent).map_err(|e| {
+                    Error::msg(format!("创建本地文件夹失败（{}）：{e}", parent.display()))
+                })?;
+            }
+            prepared.push((f.path, target.to_string_lossy().to_string(), f.meta));
+        }
+
+        let tasks: Vec<_> = prepared
+            .into_iter()
+            .map(|(remote, target, meta)| {
+                let session = session.clone();
+                let counter = counter.clone();
+                async move {
+                    download_file_counted(&session, &remote, &target, meta, &counter).await
+                }
+            })
+            .collect();
+        run_concurrent_with_counter(sink, &mut progress, total, tasks, counter).await
     }
 
     // ------------------------------------------------------------ 远程 → 远程
@@ -528,84 +566,222 @@ impl SftpManager {
         let name = basename_any(src_path);
 
         if !meta.file_type().is_dir() {
-            let mut progress = TransferProgress {
-                id: uuid::Uuid::new_v4().to_string(),
-                file_name: name,
-                direction: "remoteToRemote".into(),
-                done: 0,
-                total: meta.len(),
-                status: "running".into(),
-                message: None,
-            };
+            let mut progress = new_progress(&name, "remoteToRemote", meta.len(), None);
             sink.progress(&progress);
-            let result = copy_stream(&src, src_path, &dst, dst_path, sink, &mut progress).await;
+            let result = copy_stream(
+                &src,
+                src_path,
+                &dst,
+                dst_path,
+                &Arc::new(AtomicU64::new(0)),
+                FileMeta::from_attrs(&meta),
+            )
+            .await;
             return finish_progress(sink, &mut progress, result);
         }
 
+        let mut progress =
+            new_progress(&format!("{name}/"), "remoteToRemote", 0, Some("扫描源文件夹…".into()));
+        sink.progress(&progress);
         let files = scan_remote_dir(&src, src_path).await?;
-        let total: u64 = files.iter().map(|f| f.1).sum();
-        let mut progress = TransferProgress {
-            id: uuid::Uuid::new_v4().to_string(),
-            file_name: format!("{name}/"),
-            direction: "remoteToRemote".into(),
-            done: 0,
-            total,
-            status: "running".into(),
-            message: Some(format!("共 {} 个文件", files.len())),
-        };
+        let total: u64 = files.iter().map(|f| f.size).sum();
+        progress.total = total;
+        progress.message = Some(if files.is_empty() {
+            "空文件夹".into()
+        } else {
+            format!("共 {} 个文件，{CONCURRENCY} 路并发", files.len())
+        });
         sink.progress(&progress);
 
         let root = dst_path.trim_end_matches('/').to_string();
         let mut created: HashSet<String> = HashSet::new();
-        let result = async {
-            ensure_remote_dir(&dst, &root, &mut created).await?;
-            for (remote, _size) in files.iter() {
-                let rel = remote
-                    .strip_prefix(src_path)
-                    .unwrap_or(remote)
-                    .trim_start_matches('/');
-                let target = join_remote(&root, rel);
-                if let Some(parent) = target.rfind('/').map(|i| target[..i].to_string()) {
-                    ensure_remote_dir(&dst, &parent, &mut created).await?;
-                }
-                copy_stream(&src, remote, &dst, &target, sink, &mut progress).await?;
+        ensure_remote_dir(&dst, &root, &mut created).await?;
+
+        let counter = Arc::new(AtomicU64::new(0));
+        let mut prepared = Vec::new();
+        for f in files {
+            let rel = f
+                .path
+                .strip_prefix(src_path)
+                .unwrap_or(&f.path)
+                .trim_start_matches('/');
+            let target = join_remote(&root, rel);
+            if let Some(parent) = target.rfind('/').map(|i| target[..i].to_string()) {
+                ensure_remote_dir(&dst, &parent, &mut created).await?;
             }
-            Ok::<(), Error>(())
+            prepared.push((f.path, target, f.meta));
         }
-        .await;
-        finish_progress(sink, &mut progress, result)
+
+        let tasks: Vec<_> = prepared
+            .into_iter()
+            .map(|(from, to, meta)| {
+                let src = src.clone();
+                let dst = dst.clone();
+                let counter = counter.clone();
+                async move {
+                    copy_stream(&src, &from, &dst, &to, &counter, meta).await
+                }
+            })
+            .collect();
+        run_concurrent_with_counter(sink, &mut progress, total, tasks, counter).await
     }
 }
 
-// ---------------------------------------------------------------- 流式读写工具
-
-fn finish_progress(
+/// 与 run_concurrent 相同，但计数器由调用方提供，用于把多处写入合并到一条进度
+async fn run_concurrent_with_counter<F>(
     sink: &dyn TransferSink,
     progress: &mut TransferProgress,
-    result: Result<()>,
-) -> Result<()> {
-    match result {
-        Ok(()) => {
-            progress.status = "done".into();
-            progress.message = None;
-            sink.progress(progress);
-            Ok(())
+    total: u64,
+    tasks: Vec<F>,
+    counter: Arc<AtomicU64>,
+) -> Result<()>
+where
+    F: std::future::Future<Output = Result<()>> + Send + 'static,
+{
+    let sem = Arc::new(tokio::sync::Semaphore::new(CONCURRENCY));
+    let mut set: JoinSet<Result<()>> = JoinSet::new();
+    let mut first_err: Option<Error> = None;
+
+    for fut in tasks {
+        let permit = sem.clone().acquire_owned().await.expect("semaphore");
+        set.spawn(async move {
+            let _permit = permit;
+            fut.await
+        });
+    }
+
+    sink.progress(progress);
+    loop {
+        tokio::select! {
+            joined = set.join_next() => {
+                match joined {
+                    None => break,
+                    Some(Ok(Ok(()))) => {}
+                    Some(Ok(Err(e))) => {
+                        if first_err.is_none() {
+                            first_err = Some(e);
+                        }
+                        set.abort_all();
+                    }
+                    Some(Err(e)) => {
+                        if first_err.is_none() {
+                            first_err = Some(Error::msg(format!("传输任务异常：{e}")));
+                        }
+                        set.abort_all();
+                    }
+                }
+            }
+            _ = tokio::time::sleep(Duration::from_millis(150)) => {
+                progress.done = counter.load(Ordering::Relaxed).min(total);
+                sink.progress(progress);
+            }
         }
-        Err(e) => {
+    }
+    progress.done = counter.load(Ordering::Relaxed).min(total);
+
+    match first_err {
+        Some(e) => {
             progress.status = "error".into();
             progress.message = Some(e.to_string());
             sink.progress(progress);
             Err(e)
         }
+        None => {
+            progress.status = "done".into();
+            progress.message = None;
+            sink.progress(progress);
+            Ok(())
+        }
     }
 }
 
-async fn upload_file_stream(
+// ---------------------------------------------------------------- 单文件流式读写
+
+async fn upload_one(
+    sink: &dyn TransferSink,
     session: &SftpSession,
     local_path: &str,
     remote_path: &str,
+    name: &str,
+) -> Result<()> {
+    let mut progress = new_progress(
+        name,
+        "upload",
+        std::fs::metadata(local_path).map(|m| m.len()).unwrap_or(0),
+        None,
+    );
+    sink.progress(&progress);
+    let counter = Arc::new(AtomicU64::new(0));
+    let result =
+        upload_file_counted(session, local_path, remote_path, &counter).await.map(|_| ());
+    progress.done = counter.load(Ordering::Relaxed);
+    finish_progress(sink, &mut progress, result)
+}
+
+async fn download_one(
     sink: &dyn TransferSink,
-    progress: &mut TransferProgress,
+    session: &SftpSession,
+    remote_path: &str,
+    local_path: &str,
+    name: &str,
+    meta: FileMeta,
+) -> Result<()> {
+    let mut progress = new_progress(
+        name,
+        "download",
+        session.metadata(remote_path).await.map(|m| m.len()).unwrap_or(0),
+        None,
+    );
+    sink.progress(&progress);
+    let counter = Arc::new(AtomicU64::new(0));
+    let result = download_file_counted(session, remote_path, local_path, meta, &counter)
+        .await
+        .map(|_| ());
+    progress.done = counter.load(Ordering::Relaxed);
+    finish_progress(sink, &mut progress, result)
+}
+
+/// 把本地文件的时间戳/权限应用到远程文件（尽力而为，失败不影响传输结果）
+async fn apply_meta_to_remote(session: &SftpSession, remote_path: &str, local_path: &str) {
+    let Ok(meta) = std::fs::metadata(local_path) else {
+        return;
+    };
+    let mut attrs = FileAttributes::from(&meta);
+    // 不要带 size，避免被服务端当成截断指令
+    attrs.size = None;
+    let _ = session.set_metadata(remote_path, attrs).await;
+}
+
+/// 把远程文件的时间戳/权限应用到本地文件（尽力而为）
+fn apply_meta_to_local(local_path: &str, meta: &FileMeta) {
+    if let Some(mtime) = meta.mtime {
+        let _ = filetime::set_file_mtime(
+            local_path,
+            filetime::FileTime::from_unix_time(mtime as i64, 0),
+        );
+    }
+    if let Some(mode) = meta.permissions {
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = std::fs::set_permissions(local_path, std::fs::Permissions::from_mode(mode));
+        }
+        #[cfg(windows)]
+        {
+            if let Ok(meta) = std::fs::metadata(local_path) {
+                let mut perms = meta.permissions();
+                perms.set_readonly(mode & 0o200 == 0);
+                let _ = std::fs::set_permissions(local_path, perms);
+            }
+        }
+    }
+}
+
+async fn upload_file_counted(
+    session: &SftpSession,
+    local_path: &str,
+    remote_path: &str,
+    counter: &AtomicU64,
 ) -> Result<()> {
     let mut local = tokio::fs::File::open(local_path)
         .await
@@ -616,7 +792,6 @@ async fn upload_file_stream(
         .map_err(|e| Error::msg(format!("创建远程文件失败（{remote_path}）：{e}")))?;
 
     let mut buf = vec![0u8; CHUNK];
-    let mut last = Instant::now();
     loop {
         let n = local
             .read(&mut buf)
@@ -629,22 +804,19 @@ async fn upload_file_stream(
             .write_all(&buf[..n])
             .await
             .map_err(|e| Error::msg(format!("写入远程文件失败（{remote_path}）：{e}")))?;
-        progress.done += n as u64;
-        if last.elapsed() > Duration::from_millis(120) {
-            last = Instant::now();
-            sink.progress(progress);
-        }
+        counter.fetch_add(n as u64, Ordering::Relaxed);
     }
     let _ = remote.shutdown().await;
+    apply_meta_to_remote(session, remote_path, local_path).await;
     Ok(())
 }
 
-async fn download_file_stream(
+async fn download_file_counted(
     session: &SftpSession,
     remote_path: &str,
     local_path: &str,
-    sink: &dyn TransferSink,
-    progress: &mut TransferProgress,
+    meta: FileMeta,
+    counter: &AtomicU64,
 ) -> Result<()> {
     let mut remote = session
         .open(remote_path)
@@ -658,7 +830,6 @@ async fn download_file_stream(
         .map_err(|e| Error::msg(format!("创建本地文件失败（{local_path}）：{e}")))?;
 
     let mut buf = vec![0u8; CHUNK];
-    let mut last = Instant::now();
     loop {
         let n = remote
             .read(&mut buf)
@@ -671,13 +842,14 @@ async fn download_file_stream(
             .write_all(&buf[..n])
             .await
             .map_err(|e| Error::msg(format!("写入本地文件失败（{local_path}）：{e}")))?;
-        progress.done += n as u64;
-        if last.elapsed() > Duration::from_millis(120) {
-            last = Instant::now();
-            sink.progress(progress);
-        }
+        counter.fetch_add(n as u64, Ordering::Relaxed);
     }
-    let _ = local.flush().await;
+    local
+        .flush()
+        .await
+        .map_err(|e| Error::msg(format!("写入本地文件失败（{local_path}）：{e}")))?;
+    drop(local);
+    apply_meta_to_local(local_path, &meta);
     Ok(())
 }
 
@@ -686,8 +858,8 @@ async fn copy_stream(
     src_path: &str,
     dst: &SftpSession,
     dst_path: &str,
-    sink: &dyn TransferSink,
-    progress: &mut TransferProgress,
+    counter: &AtomicU64,
+    meta: FileMeta,
 ) -> Result<()> {
     let mut reader = src
         .open(src_path)
@@ -699,7 +871,6 @@ async fn copy_stream(
         .map_err(|e| Error::msg(format!("创建目标文件失败（{dst_path}）：{e}")))?;
 
     let mut buf = vec![0u8; CHUNK];
-    let mut last = Instant::now();
     loop {
         let n = reader
             .read(&mut buf)
@@ -712,13 +883,18 @@ async fn copy_stream(
             .write_all(&buf[..n])
             .await
             .map_err(|e| Error::msg(format!("写入目标文件失败（{dst_path}）：{e}")))?;
-        progress.done += n as u64;
-        if last.elapsed() > Duration::from_millis(120) {
-            last = Instant::now();
-            sink.progress(progress);
-        }
+        counter.fetch_add(n as u64, Ordering::Relaxed);
     }
     let _ = writer.shutdown().await;
+
+    // 目标端还原时间戳/权限
+    let attrs = FileAttributes {
+        size: None,
+        mtime: meta.mtime,
+        permissions: meta.permissions,
+        ..Default::default()
+    };
+    let _ = dst.set_metadata(dst_path, attrs).await;
     Ok(())
 }
 
@@ -731,13 +907,7 @@ pub fn normalize_remote(path: &str) -> String {
     }
 }
 
-pub fn basename(path: &str, sep: char) -> String {
-    let s = path.trim_end_matches(sep);
-    match s.rfind(sep) {
-        Some(idx) if idx + 1 < s.len() => s[idx + 1..].to_string(),
-        _ => s.to_string(),
-    }
-}
+
 
 #[cfg(test)]
 mod tests {
@@ -813,7 +983,7 @@ mod e2e {
 
     /// 需要一台真实 SSH 服务器，例如：
     ///   docker run -d --name tsssh -p 2222:22 alpine:3.20 sh -c "apk add --no-cache openssh-server; echo root:tomato123 | chpasswd; ssh-keygen -A; sed -i 's/^#*PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config; /usr/sbin/sshd -D -e"
-    ///   TOMATO_TEST_SSH=127.0.0.1:2222 cargo test --lib sftp::e2e -- --nocapture
+    ///   TOMATO_TEST_SSH=127.0.0.1:2222 cargo test --lib sftp -- --nocapture --test-threads=1
     #[test]
     fn directory_upload_download_copy_and_remove() {
         let Ok(addr) = std::env::var("TOMATO_TEST_SSH") else {
@@ -831,12 +1001,19 @@ mod e2e {
             let home = opened.home.clone();
             let tag = uuid::Uuid::new_v4().to_string();
 
-            // 1) 造一个多层目录
+            // 1) 造一个多层目录（含 20 个文件，用来触发并发）
             let src = std::env::temp_dir().join(format!("tsftp-src-{tag}"));
             std::fs::create_dir_all(src.join("sub/deep")).unwrap();
             std::fs::write(src.join("a.txt"), b"1111").unwrap();
             std::fs::write(src.join("sub/b.txt"), b"22222").unwrap();
             std::fs::write(src.join("sub/deep/c.bin"), vec![7u8; 5000]).unwrap();
+            for i in 0..20 {
+                std::fs::write(src.join("sub").join(format!("f{i}.bin")), vec![i as u8; 1024])
+                    .unwrap();
+            }
+            // 把 mtime 设成一个明显的过去时间，稍后验证是否被保留
+            let old = filetime::FileTime::from_unix_time(1_600_000_000, 0);
+            filetime::set_file_mtime(src.join("a.txt"), old).unwrap();
 
             // 2) 递归上传
             let remote_dir = join_remote(&home, &format!("tsftp-{tag}"));
@@ -845,14 +1022,15 @@ mod e2e {
                 .expect("上传目录");
             let session = mgr.session("s1").unwrap();
             let files = scan_remote_dir(&session, &remote_dir).await.unwrap();
-            let mut names: Vec<String> = files
-                .iter()
-                .map(|f| f.0.trim_start_matches(&remote_dir).to_string())
-                .collect();
-            names.sort();
-            assert_eq!(names, vec!["/a.txt", "/sub/b.txt", "/sub/deep/c.bin"]);
+            assert_eq!(files.len(), 23);
+            let uploaded_a = files.iter().find(|f| f.path.ends_with("/a.txt")).unwrap();
+            assert_eq!(
+                uploaded_a.meta.mtime,
+                Some(1_600_000_000),
+                "上传后远程文件的 mtime 应被保留"
+            );
 
-            // 3) 递归下载
+            // 3) 递归下载，并检查本地 mtime 是否保留
             let dl = std::env::temp_dir().join(format!("tsftp-dl-{tag}"));
             mgr.download(&sink, "s1", &remote_dir, &dl.to_string_lossy())
                 .await
@@ -860,6 +1038,10 @@ mod e2e {
             assert_eq!(std::fs::read(dl.join("a.txt")).unwrap(), b"1111");
             assert_eq!(std::fs::read(dl.join("sub/b.txt")).unwrap(), b"22222");
             assert_eq!(std::fs::read(dl.join("sub/deep/c.bin")).unwrap().len(), 5000);
+            let downloaded_mtime = filetime::FileTime::from_last_modification_time(
+                &std::fs::metadata(dl.join("a.txt")).unwrap(),
+            );
+            assert_eq!(downloaded_mtime.unix_seconds(), 1_600_000_000);
 
             // 4) 远程 → 远程（目录）
             mgr.open("s2", &host).await.expect("第二个 SFTP 会话");
@@ -868,7 +1050,10 @@ mod e2e {
                 .await
                 .expect("远程互传");
             let session2 = mgr.session("s2").unwrap();
-            assert_eq!(scan_remote_dir(&session2, &copy_to).await.unwrap().len(), 3);
+            let copied = scan_remote_dir(&session2, &copy_to).await.unwrap();
+            assert_eq!(copied.len(), 23);
+            let copied_a = copied.iter().find(|f| f.path.ends_with("/a.txt")).unwrap();
+            assert_eq!(copied_a.meta.mtime, Some(1_600_000_000));
 
             // 5) 递归删除（目录非空也能删）
             mgr.remove("s1", &remote_dir, true).await.expect("递归删除");
@@ -876,10 +1061,13 @@ mod e2e {
             assert!(!session.try_exists(remote_dir.as_str()).await.unwrap());
             assert!(!session2.try_exists(copy_to.as_str()).await.unwrap());
 
-            // 6) 进度事件
+            // 6) 进度事件：有"扫描中"、有 done 状态、且有累计字节
             let events = sink.0.lock().unwrap();
             assert!(events.iter().any(|e| e.status == "done"));
             assert!(events.iter().any(|e| e.done > 0));
+            assert!(events
+                .iter()
+                .any(|e| e.message.as_deref().unwrap_or("").contains("扫描")));
 
             let _ = std::fs::remove_dir_all(&src);
             let _ = std::fs::remove_dir_all(&dl);

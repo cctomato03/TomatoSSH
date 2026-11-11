@@ -57,6 +57,8 @@ pub fn run() {
             commands::local_mkdir,
             commands::local_remove,
             commands::local_rename,
+            commands::local_copy,
+            commands::open_file_manager,
             commands::sync_state,
             commands::sync_login,
             commands::sync_register,

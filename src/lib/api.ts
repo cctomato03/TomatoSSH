@@ -66,6 +66,11 @@ export const api = {
   localMkdir: (path: string) => call<void>("local_mkdir", { path }),
   localRemove: (path: string) => call<void>("local_remove", { path }),
   localRename: (from: string, to: string) => call<void>("local_rename", { from, to }),
+  localCopy: (from: string, to: string) => call<void>("local_copy", { from, to }),
+
+  // ---------- 独立文件管理器窗口 ----------
+  openFileManager: (hostId?: string | null) =>
+    call<void>("open_file_manager", { hostId: hostId ?? null }),
 
   // ---------- 云同步 ----------
   syncState: () => call<SyncStateDto>("sync_state"),

@@ -9,7 +9,6 @@ import { getTheme } from "../lib/themes";
 import type { TabRecord } from "../lib/types";
 import { useVault } from "../store/useVault";
 import { useTabs } from "../store/useTabs";
-import { FilePanel } from "./FilePanel";
 import { Loader2 } from "lucide-react";
 
 interface Props {
@@ -200,7 +199,7 @@ export function TerminalPane({ tab, active }: Props) {
       termRef.current?.focus();
     });
     return () => cancelAnimationFrame(raf);
-  }, [active, tab.showFiles]);
+  }, [active]);
 
   return (
     <div className="pane" style={{ display: active ? "flex" : "none" }}>
@@ -219,7 +218,6 @@ export function TerminalPane({ tab, active }: Props) {
         )}
         {tab.status === "closed" && <div className="term-badge">会话已结束</div>}
       </div>
-      {tab.showFiles && tab.kind === "ssh" && tab.hostId && <FilePanel tabId={tab.id} hostId={tab.hostId} />}
     </div>
   );
 }

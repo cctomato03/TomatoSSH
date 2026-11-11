@@ -11,6 +11,7 @@ struct AuthRequest<'a> {
 }
 
 #[derive(Deserialize, Clone, Debug)]
+#[allow(dead_code)]
 pub struct AuthResponse {
     pub token: String,
     #[serde(default)]
@@ -18,6 +19,7 @@ pub struct AuthResponse {
 }
 
 #[derive(Deserialize, Debug)]
+#[allow(dead_code)]
 struct VaultResponse {
     #[serde(default)]
     revision: i64,

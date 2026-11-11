@@ -1,0 +1,310 @@
+/* 独立文件管理器窗口样式（复用 global.css 里的主题变量） */
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+}
+
+.fm-root {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 13px;
+}
+
+.fm-top {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+  min-height: 40px;
+}
+.fm-brand {
+  font-weight: 600;
+  white-space: nowrap;
+}
+.fm-sub {
+  color: var(--text-muted);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+.fm-busy {
+  color: var(--accent);
+  font-size: 11px;
+  white-space: nowrap;
+}
+.fm-toast {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: color-mix(in srgb, var(--accent) 20%, transparent);
+  color: var(--text);
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  border-radius: 12px;
+  padding: 3px 10px;
+  font-size: 11px;
+  max-width: 46%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fm-body {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
+
+.fm-pane {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--panel);
+  min-height: 0;
+}
+
+.fm-pane-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+}
+.fm-source {
+  flex: 1;
+  min-width: 0;
+  padding: 4px 6px;
+  font-size: 12px;
+}
+.fm-head-actions {
+  display: flex;
+  gap: 1px;
+}
+.fm-head-actions button {
+  width: 24px;
+  height: 24px;
+  border-radius: 5px;
+  display: grid;
+  place-items: center;
+  color: var(--text-muted);
+}
+.fm-head-actions button:hover {
+  background: var(--surface);
+  color: var(--text);
+}
+
+.fm-path {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px;
+}
+.fm-path input {
+  flex: 1;
+  min-width: 0;
+  padding: 3px 7px;
+  font-size: 11px;
+  font-family: ui-monospace, "JetBrains Mono", Consolas, monospace;
+}
+.fm-host-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  max-width: 45%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.fm-error {
+  margin: 0 8px 4px;
+  padding: 5px 8px;
+  font-size: 11px;
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--danger) 16%, transparent);
+  border: 1px solid color-mix(in srgb, var(--danger) 40%, transparent);
+  cursor: pointer;
+}
+
+.fm-list {
+  flex: 1;
+  overflow: auto;
+  min-height: 0;
+  padding-bottom: 6px;
+}
+
+.fm-row {
+  display: grid;
+  grid-template-columns: 20px 1fr auto auto;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px;
+  border-radius: 4px;
+  cursor: default;
+}
+.fm-row:hover {
+  background: var(--surface);
+}
+.fm-row.selected {
+  background: color-mix(in srgb, var(--accent) 24%, transparent);
+}
+.fm-icon {
+  font-size: 12px;
+}
+.fm-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fm-size {
+  color: var(--text-muted);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.fm-time {
+  color: var(--text-muted);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  min-width: 84px;
+  text-align: right;
+}
+.fm-row-actions {
+  display: none;
+  gap: 1px;
+}
+.fm-row:hover .fm-row-actions {
+  display: flex;
+}
+.fm-row-actions button {
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  display: grid;
+  place-items: center;
+  color: var(--text-muted);
+}
+.fm-row-actions button:hover {
+  background: var(--input);
+  color: var(--text);
+}
+.fm-empty {
+  color: var(--text-muted);
+  font-size: 11px;
+  text-align: center;
+  padding: 14px 8px;
+}
+
+.fm-pane-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 10px;
+  border-top: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 11px;
+}
+.fm-pane-foot span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.fm-middle {
+  width: 86px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border-left: 1px solid var(--border);
+  border-right: 1px solid var(--border);
+  background: var(--bg);
+}
+.fm-middle button {
+  width: 38px;
+  height: 38px;
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--border);
+}
+.fm-middle button:hover:not(:disabled) {
+  background: var(--accent);
+  color: var(--accent-text);
+  border-color: transparent;
+}
+.fm-middle button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.fm-arrow-label {
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+.fm-bottom {
+  border-top: 1px solid var(--border);
+  background: var(--panel);
+  max-height: 132px;
+  overflow: auto;
+  padding: 6px 10px;
+}
+.fm-note {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+.fm-transfers {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.fm-transfer {
+  display: grid;
+  grid-template-columns: minmax(120px, 1fr) 120px minmax(120px, auto) auto;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+}
+.fm-t-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fm-t-bar {
+  height: 5px;
+  border-radius: 3px;
+  background: var(--input);
+  overflow: hidden;
+}
+.fm-t-bar > i {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.2s;
+}
+.fm-t-text {
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.fm-t-msg {
+  color: var(--text-muted);
+  opacity: 0.75;
+  white-space: nowrap;
+}

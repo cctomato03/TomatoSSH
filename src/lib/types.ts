@@ -117,5 +117,4 @@ export interface TabRecord {
   status: "connecting" | "connected" | "closed" | "error";
   error?: string | null;
   cwd?: string | null;
-  showFiles: boolean;
 }

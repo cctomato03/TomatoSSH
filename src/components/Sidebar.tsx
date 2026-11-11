@@ -3,6 +3,7 @@ import {
   ChevronDown,
   ChevronRight,
   FolderClosed,
+  FolderOpen,
   FolderPlus,
   Laptop,
   Pencil,
@@ -19,6 +20,7 @@ import {
 import type { GroupRecord, HostRecord } from "../lib/types";
 import { useTabs } from "../store/useTabs";
 import { useVault } from "../store/useVault";
+import { api } from "../lib/api";
 import { useUi } from "../store/useUi";
 import { ContextMenu, type CtxItem } from "./ContextMenu";
 
@@ -40,7 +42,6 @@ export function Sidebar() {
   const activeHostId = useMemo(() => tabs.find((t) => t.id === activeId)?.hostId ?? null, [tabs, activeId]);
   const openSshTab = useTabs((s) => s.openSshTab);
   const openLocalTab = useTabs((s) => s.openLocalTab);
-  const patchTab = useTabs((s) => s.patchTab);
 
   const openHostDialog = useUi((s) => s.openHost);
   const openGroupDialog = useUi((s) => s.openGroup);
@@ -65,14 +66,17 @@ export function Sidebar() {
     });
 
   const connect = (host: HostRecord, withFiles = false) => {
+    if (withFiles) {
+      // 文件传输走独立窗口，不挤在终端右侧
+      api.openFileManager(host.id).catch((e) => console.error(e));
+      return;
+    }
     const existing = tabs.find((t) => t.kind === "ssh" && t.hostId === host.id && t.status !== "error");
     if (existing) {
       useTabs.getState().setActive(existing.id);
-      if (withFiles) patchTab(existing.id, { showFiles: true });
       return;
     }
-    const id = openSshTab(host);
-    if (withFiles) patchTab(id, { showFiles: true });
+    openSshTab(host);
   };
 
   const childrenOf = (parentId: string | null) =>
@@ -101,7 +105,7 @@ export function Sidebar() {
       y,
       items: [
         { label: "连接", icon: <Play size={13} />, onClick: () => connect(host) },
-        { label: "打开并显示文件传输", icon: <FolderClosed size={13} />, onClick: () => connect(host, true) },
+        { label: "在文件管理器中打开", icon: <FolderOpen size={13} />, onClick: () => connect(host, true) },
         { kind: "sep" },
         {
           label: "编辑",
@@ -344,6 +348,9 @@ export function Sidebar() {
         </button>
         <button className="btn" style={{ flex: 1 }} onClick={() => openGroupDialog(null, null)}>
           <FolderPlus size={13} /> 分组
+        </button>
+        <button className="icon-btn" title="打开文件管理器" onClick={() => api.openFileManager().catch((e) => console.error(e))}>
+          <FolderOpen size={14} />
         </button>
         <button className="icon-btn" title="刷新" onClick={() => useVault.getState().load()}>
           <RefreshCw size={14} />

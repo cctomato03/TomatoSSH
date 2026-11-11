@@ -82,6 +82,13 @@ export default function App() {
       if (e.key.toLowerCase() === "t" && !e.shiftKey) {
         e.preventDefault();
         useTabs.getState().openLocalTab();
+      } else if (e.key.toLowerCase() === "f" && e.shiftKey) {
+        // Ctrl/Cmd+Shift+F：在独立窗口打开文件管理器（当前 SSH 标签会预选为目标主机）
+        e.preventDefault();
+        const tabs = useTabs.getState().tabs;
+        const active = tabs.find((t) => t.id === useTabs.getState().activeId);
+        const hostId = active?.kind === "ssh" ? active.hostId : null;
+        api.openFileManager(hostId).catch((err) => console.error(err));
       } else if (e.key.toLowerCase() === "w" && e.shiftKey) {
         const id = useTabs.getState().activeId;
         if (id) {

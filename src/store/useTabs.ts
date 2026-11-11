@@ -10,12 +10,11 @@ interface TabsState {
   closeTab: (id: string) => void;
   setActive: (id: string) => void;
   patchTab: (id: string, patch: Partial<TabRecord>) => void;
-  toggleFiles: (id: string) => void;
 }
 
 const uid = () => crypto.randomUUID();
 
-export const useTabs = create<TabsState>((set, get) => ({
+export const useTabs = create<TabsState>((set) => ({
   tabs: [],
   activeId: null,
 
@@ -27,7 +26,6 @@ export const useTabs = create<TabsState>((set, get) => ({
       title: host.label || `${host.username}@${host.host}`,
       hostId: host.id,
       status: "connecting",
-      showFiles: false,
     };
     set((s) => ({ tabs: [...s.tabs, tab], activeId: id }));
     return id;
@@ -41,7 +39,6 @@ export const useTabs = create<TabsState>((set, get) => ({
       title: title ?? "本地终端",
       hostId: null,
       status: "connecting",
-      showFiles: false,
     };
     set((s) => ({ tabs: [...s.tabs, tab], activeId: id }));
     return id;
@@ -65,9 +62,4 @@ export const useTabs = create<TabsState>((set, get) => ({
     set((s) => ({ tabs: s.tabs.map((t) => (t.id === id ? { ...t, ...patch } : t)) }));
   },
 
-  toggleFiles(id) {
-    const tab = get().tabs.find((t) => t.id === id);
-    if (!tab) return;
-    set((s) => ({ tabs: s.tabs.map((t) => (t.id === id ? { ...t, showFiles: !t.showFiles } : t)) }));
-  },
 }));

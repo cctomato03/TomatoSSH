@@ -37,8 +37,7 @@ impl client::Handler for ClientHandler {
     }
 }
 
-pub struct TermSession {
-    pub write: Arc<ChannelWriteHalf<Msg>>,
+pub struct TermSession {    pub write: Arc<ChannelWriteHalf<Msg>>,
     pub handle: Handle<ClientHandler>,
 }
 

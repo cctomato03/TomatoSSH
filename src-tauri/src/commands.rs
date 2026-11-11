@@ -301,6 +301,35 @@ pub fn local_rename(from: String, to: String) -> Result<()> {
     localfs::rename(&from, &to)
 }
 
+#[tauri::command]
+pub fn local_copy(from: String, to: String) -> Result<()> {
+    localfs::copy(&from, &to)
+}
+
+/// 打开独立的 SFTP 文件管理器窗口（支持 本地 ⇄ 远程、远程 ⇄ 远程）
+#[tauri::command]
+pub async fn open_file_manager(app: AppHandle, host_id: Option<String>) -> Result<()> {
+    use tauri::{Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
+
+    if let Some(win) = app.get_webview_window("files") {
+        win.set_focus().ok();
+        let _ = win.emit("fm-open", &host_id);
+        return Ok(());
+    }
+
+    let url = match host_id.as_deref() {
+        Some(h) if !h.is_empty() => format!("files.html?host={h}"),
+        _ => "files.html".to_string(),
+    };
+    WebviewWindowBuilder::new(&app, "files", WebviewUrl::App(url.into()))
+        .title("TomatoSSH 文件管理")
+        .inner_size(1180.0, 760.0)
+        .min_inner_size(760.0, 480.0)
+        .build()
+        .map_err(|e| Error::msg(format!("打开文件管理器窗口失败：{e}")))?;
+    Ok(())
+}
+
 // ---------------------------------------------------------------- 云同步
 
 fn sync_state_of(vault: &VaultStore) -> SyncStateDto {

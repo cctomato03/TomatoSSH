@@ -2,6 +2,6 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "TomatoSSH 主窗口默认权限",
-  "windows": ["main"],
+  "windows": ["main", "files"],
   "permissions": ["core:default", "dialog:default"]
 }

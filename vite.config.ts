@@ -19,5 +19,12 @@ export default defineConfig({
     minify: true,
     sourcemap: false,
     chunkSizeWarningLimit: 2000,
+    // 主窗口 + 独立文件管理器窗口（两个 HTML 入口）
+    rollupOptions: {
+      input: {
+        main: "index.html",
+        files: "files.html",
+      },
+    },
   },
 });

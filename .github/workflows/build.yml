@@ -1,7 +1,7 @@
 name: build
 
 # Windows / macOS / Linux 三个平台各自在自己的系统上打包。
-# - 推送 tag（v1.0.1）→ 编译 + 创建 Draft Release 并上传安装包
+# - 推送 tag（v1.1.0）→ 编译 + 创建 **已发布** Release（可直接下载安装包）
 # - 手动 Run workflow     → 只编译并上传 Actions Artifacts（不建 Release）
 on:
   push:
@@ -86,7 +86,7 @@ jobs:
           tagName: ${{ github.ref_name }}
           releaseName: "TomatoSSH ${{ github.ref_name }}"
           releaseBody: "安装包：Windows 用 .msi 或 -setup.exe；macOS 用 .dmg；Linux 用 .deb / .AppImage。详见 README。"
-          releaseDraft: true
+          releaseDraft: false
           prerelease: false
           args: ${{ matrix.args }}
 
