@@ -119,11 +119,21 @@ export interface SerialProfile {
   parity: string;
   stopBits: number;
   flowControl: string;
+  /** 掉线后是否自动重连 */
+  autoReconnect: boolean;
   updatedAt: number;
   deleted: boolean;
 }
 
 /** 系统里可用的串口 */
+/** 串口控制线状态 */
+export interface SerialLines {
+  dtr: boolean;
+  rts: boolean;
+  cts: boolean;
+  cd: boolean;
+}
+
 export interface SerialPortInfo {
   name: string;
   kind: string;

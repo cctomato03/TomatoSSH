@@ -6,10 +6,11 @@ import "@xterm/xterm/css/xterm.css";
 
 import { api, onTermData, onTermExit } from "../lib/api";
 import { getTheme } from "../lib/themes";
-import type { TabRecord } from "../lib/types";
+import type { SerialLines, TabRecord } from "../lib/types";
 import { useVault } from "../store/useVault";
+import { SerialHexView } from "./SerialHexView";
 import { useTabs } from "../store/useTabs";
-import { Loader2 } from "lucide-react";
+import { Cable, Loader2, RotateCcw, Send } from "lucide-react";
 
 interface Props {
   tab: TabRecord;
@@ -27,6 +28,13 @@ export function TerminalPane({ tab, active }: Props) {
   const patchTab = useTabs((s) => s.patchTab);
 
   const [notice, setNotice] = useState<string | null>(null);
+  const isSerial = tab.kind === "serial";
+  const [hexMode, setHexMode] = useState(false);
+  const [lines, setLines] = useState<SerialLines>({ dtr: false, rts: false, cts: false, cd: false });
+  const [sendText, setSendText] = useState("");
+  const [sendHex, setSendHex] = useState(false);
+  const [newline, setNewline] = useState<"none" | "crlf" | "lf" | "cr">("crlf");
+  const [history, setHistory] = useState<string[]>([]);
   const theme = getTheme(settings.theme);
 
   // 1) 初始化 xterm（只执行一次）
@@ -207,10 +215,159 @@ export function TerminalPane({ tab, active }: Props) {
     return () => cancelAnimationFrame(raf);
   }, [active]);
 
+  // 5) 串口：轮询控制线状态（CTS/CD 只有轮询才能拿到）
+  useEffect(() => {
+    if (!isSerial) return;
+    let stopped = false;
+    const tick = () => {
+      api
+        .serialGetLines(tab.id)
+        .then((l) => {
+          if (!stopped) setLines(l);
+        })
+        .catch(() => undefined);
+    };
+    tick();
+    const timer = window.setInterval(tick, 2000);
+    return () => {
+      stopped = true;
+      window.clearInterval(timer);
+    };
+  }, [isSerial, tab.id]);
+
+  const toggleLine = async (line: "dtr" | "rts") => {
+    const next = line === "dtr" ? !lines.dtr : !lines.rts;
+    try {
+      await api.serialSetLine(tab.id, line, next);
+      setLines((l) => ({ ...l, [line]: next }));
+    } catch (e) {
+      setNotice(String(e));
+    }
+  };
+
+  const doReset = async () => {
+    try {
+      await api.serialPulseReset(tab.id);
+      setLines((l) => ({ ...l, dtr: true, rts: true }));
+      termRef.current?.writeln("\x1b[38;5;244m[已发送 DTR/RTS 复位脉冲]\x1b[0m");
+    } catch (e) {
+      setNotice(String(e));
+    }
+  };
+
+  const doSend = async () => {
+    if (!sendText) return;
+    try {
+      let bytes: Uint8Array;
+      if (sendHex) {
+        const cleaned = sendText.replace(/0x/gi, "").replace(/[\s,]/g, "");
+        if (!/^[0-9a-fA-F]+$/.test(cleaned) || cleaned.length % 2 !== 0) {
+          setNotice("HEX 格式不正确，应形如 AA BB 0C（成对十六进制）");
+          return;
+        }
+        bytes = new Uint8Array((cleaned.match(/../g) ?? []).map((h) => parseInt(h, 16)));
+      } else {
+        const suffix = newline === "crlf" ? "\r\n" : newline === "lf" ? "\n" : newline === "cr" ? "\r" : "";
+        bytes = new TextEncoder().encode(sendText + suffix);
+      }
+      await api.termWriteBytes(tab.id, bytes);
+      setHistory((h) => [sendText, ...h.filter((x) => x !== sendText)].slice(0, 10));
+      setSendText("");
+    } catch (e) {
+      setNotice(String(e));
+    }
+  };
+
   return (
     <div className="pane" style={{ display: active ? "flex" : "none" }}>
       <div className="term-wrap">
-        <div className="term-host" ref={hostRef} />
+        {isSerial && (
+          <div className="serial-toolbar">
+            <span className="st-group">
+              <Cable size={13} className="st-icon" />
+              <button
+                className={lines.dtr ? "st-on" : undefined}
+                title="切换 DTR 电平"
+                onClick={() => void toggleLine("dtr")}
+              >
+                DTR
+              </button>
+              <button
+                className={lines.rts ? "st-on" : undefined}
+                title="切换 RTS 电平"
+                onClick={() => void toggleLine("rts")}
+              >
+                RTS
+              </button>
+              <span className="st-ind" title="输入侧电平（只读）">
+                CTS {lines.cts ? "●" : "○"} · CD {lines.cd ? "●" : "○"}
+              </span>
+              <button title="DTR/RTS 复位脉冲（开发板常用）" onClick={() => void doReset()}>
+                <RotateCcw size={12} /> 复位
+              </button>
+            </span>
+
+            <span className="st-group">
+              <button
+                className={hexMode ? "st-on" : undefined}
+                title="在文本终端 / 十六进制视图之间切换"
+                onClick={() => setHexMode((v) => !v)}
+              >
+                HEX 视图
+              </button>
+            </span>
+
+            <span className="st-send">
+              <select value={newline} onChange={(e) => setNewline(e.target.value as typeof newline)}>
+                <option value="none">无换行</option>
+                <option value="crlf">CRLF</option>
+                <option value="lf">LF</option>
+                <option value="cr">CR</option>
+              </select>
+              <input
+                value={sendText}
+                placeholder={sendHex ? "十六进制，如 AA 55 0D" : "输入要发送的内容，回车发送"}
+                onChange={(e) => setSendText(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") void doSend();
+                }}
+                spellCheck={false}
+              />
+              <label className="st-hexcheck" title="按十六进制解析输入内容">
+                <input type="checkbox" checked={sendHex} onChange={(e) => setSendHex(e.target.checked)} />
+                HEX
+              </label>
+              <button className="st-sendbtn" onClick={() => void doSend()} title="发送">
+                <Send size={12} /> 发送
+              </button>
+              {history.length > 0 && (
+                <select
+                  value=""
+                  title="最近发送"
+                  onChange={(e) => {
+                    if (e.target.value) setSendText(e.target.value);
+                  }}
+                >
+                  <option value="">最近…</option>
+                  {history.map((h, i) => (
+                    <option key={`${h}-${i}`} value={h}>
+                      {h.length > 24 ? `${h.slice(0, 24)}…` : h}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </span>
+          </div>
+        )}
+
+        <div
+          className="term-host"
+          ref={hostRef}
+          style={isSerial && hexMode ? { display: "none" } : undefined}
+        />
+        {isSerial && hexMode && (
+          <SerialHexView sessionId={tab.id} subscribe={onTermData} className="term-hex" />
+        )}
         {notice && (
           <div className="term-notice">
             <span>{notice}</span>

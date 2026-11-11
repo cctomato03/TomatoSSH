@@ -7,6 +7,7 @@ import type {
   GroupRecord,
   HostDraft,
   HostRecord,
+  SerialLines,
   SerialPortInfo,
   SerialProfile,
   SyncResult,
@@ -82,6 +83,15 @@ export const api = {
   serialDelete: (id: string) => call<void>("serial_delete", { id }),
   serialOpen: (sessionId: string, profileId: string) =>
     call<string>("serial_open", { sessionId, profileId }),
+  serialSetLine: (sessionId: string, line: "dtr" | "rts", value: boolean) =>
+    call<void>("serial_set_line", { sessionId, line, value }),
+  serialGetLines: (sessionId: string) =>
+    call<SerialLines>("serial_get_lines", { sessionId }),
+  serialPulseReset: (sessionId: string) => call<void>("serial_pulse_reset", { sessionId }),
+
+  /** 按原始字节写终端（HEX 发送用；SSH/本地终端也可用） */
+  termWriteBytes: (sessionId: string, data: Uint8Array) =>
+    call<void>("term_write_b64", { sessionId, dataB64: bytesToBase64(data) }),
 
   // ---------- App 信息 ----------
   appVersion: () => call<string>("app_version"),

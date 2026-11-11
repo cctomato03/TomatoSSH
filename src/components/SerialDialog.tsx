@@ -16,6 +16,7 @@ const emptyProfile = (): SerialProfile => ({
   parity: "none",
   stopBits: 1,
   flowControl: "none",
+  autoReconnect: true,
   updatedAt: 0,
   deleted: false,
 });
@@ -212,6 +213,20 @@ export function SerialDialog({ profile, onClose }: Props) {
           />
         </div>
       )}
+
+      <div className="switch">
+        <span>
+          掉线后自动重连
+          <span className="hint" style={{ display: "block" }}>
+            USB 被拔/设备重启后，自动每 1.5 秒尝试重新打开
+          </span>
+        </span>
+        <input
+          type="checkbox"
+          checked={form.autoReconnect}
+          onChange={(e) => patch({ autoReconnect: e.target.checked })}
+        />
+      </div>
 
       <div className="hint">
         串口只提供终端交互（没有文件传输）。常见参数：115200 8N1、无流控。若列表里没有你要的设备，可手动输入设备路径。

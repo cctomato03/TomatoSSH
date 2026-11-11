@@ -240,6 +240,8 @@ pub struct SerialProfile {
     pub stop_bits: u8,
     /// none | software | hardware
     pub flow_control: String,
+    /// 掉线（USB 被拔等）后是否自动重连
+    pub auto_reconnect: bool,
     pub updated_at: i64,
     pub deleted: bool,
 }
@@ -255,6 +257,7 @@ impl Default for SerialProfile {
             parity: "none".into(),
             stop_bits: 1,
             flow_control: "none".into(),
+            auto_reconnect: true,
             updated_at: 0,
             deleted: false,
         }

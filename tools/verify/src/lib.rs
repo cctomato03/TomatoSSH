@@ -82,6 +82,7 @@ pub fn run() {
             commands::ssh_open,
             commands::local_open,
             commands::term_write,
+            commands::term_write_b64,
             commands::term_resize,
             commands::term_close,
             commands::sftp_open,

@@ -141,12 +141,27 @@ pub fn local_open(
 
 #[tauri::command]
 pub async fn term_write(state: State<'_, AppState>, session_id: String, data: String) -> Result<()> {
-    if state.ssh.has_session(&session_id) {
-        state.ssh.write(&session_id, data.as_bytes()).await
-    } else if state.local.has(&session_id) {
-        state.local.write(&session_id, data.as_bytes())
-    } else if state.serial.has(&session_id) {
-        state.serial.write(&session_id, data.as_bytes())
+    write_bytes(&state, &session_id, data.as_bytes()).await
+}
+
+/// 按原始字节写终端（HEX 发送用）
+#[tauri::command]
+pub async fn term_write_b64(
+    state: State<'_, AppState>,
+    session_id: String,
+    data_b64: String,
+) -> Result<()> {
+    let bytes = crate::crypto::b64_decode(&data_b64)?;
+    write_bytes(&state, &session_id, &bytes).await
+}
+
+async fn write_bytes(state: &AppState, session_id: &str, data: &[u8]) -> Result<()> {
+    if state.ssh.has_session(session_id) {
+        state.ssh.write(session_id, data).await
+    } else if state.local.has(session_id) {
+        state.local.write(session_id, data)
+    } else if state.serial.has(session_id) {
+        state.serial.write(session_id, data)
     } else {
         Err(Error::msg("会话不存在或已关闭"))
     }
@@ -356,6 +371,32 @@ pub fn serial_open(
         vault.serial(&profile_id)?
     };
     state.serial.open(app, session_id, &profile)
+}
+
+/// 手动设置 DTR / RTS 电平
+#[tauri::command]
+pub fn serial_set_line(
+    state: State<'_, AppState>,
+    session_id: String,
+    line: String,
+    value: bool,
+) -> Result<()> {
+    state.serial.set_line(&session_id, &line, value)
+}
+
+/// 读取当前控制线状态（DTR/RTS/CTS/CD）
+#[tauri::command]
+pub fn serial_get_lines(
+    state: State<'_, AppState>,
+    session_id: String,
+) -> Result<crate::serial::SerialLines> {
+    state.serial.get_lines(&session_id)
+}
+
+/// 复位脉冲（DTR/RTS 拉低再释放），调试开发板常用
+#[tauri::command]
+pub fn serial_pulse_reset(state: State<'_, AppState>, session_id: String) -> Result<()> {
+    state.serial.pulse_reset(&session_id)
 }
 
 /// 打开独立的 SFTP 文件管理器窗口（支持 本地 ⇄ 远程、远程 ⇄ 远程）

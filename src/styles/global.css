@@ -979,3 +979,158 @@ kbd {
 .group-list button.on {
   color: var(--accent);
 }
+
+/* ---------------- 串口工具栏 / HEX 视图 ---------------- */
+.serial-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 4px 6px 6px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--border);
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.serial-toolbar .st-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.serial-toolbar button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 5px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 11px;
+}
+.serial-toolbar button:hover {
+  border-color: var(--accent);
+}
+.serial-toolbar button.st-on {
+  background: color-mix(in srgb, var(--accent) 25%, transparent);
+  border-color: var(--accent);
+  color: var(--text);
+}
+.st-icon {
+  color: var(--text-muted);
+}
+.st-ind {
+  font-variant-numeric: tabular-nums;
+  opacity: 0.85;
+}
+.st-send {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+}
+.st-send input[type="text"],
+.st-send > input {
+  width: 220px;
+  padding: 3px 7px;
+  font-size: 11px;
+}
+.st-send select {
+  padding: 2px 4px;
+  font-size: 11px;
+}
+.st-hexcheck {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.st-hexcheck input {
+  width: 12px;
+  height: 12px;
+}
+.serial-toolbar .st-sendbtn {
+  background: var(--accent);
+  color: var(--accent-text);
+  border-color: transparent;
+}
+
+.hexview {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--panel);
+}
+.hexview-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--border);
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.hexview-auto {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.hexview-auto input {
+  width: 12px;
+  height: 12px;
+}
+.hexview-clear {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+.hexview-clear:hover {
+  color: var(--text);
+}
+.hexview-body {
+  flex: 1;
+  overflow: auto;
+  padding: 6px 8px;
+  font-family: ui-monospace, "JetBrains Mono", Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.hexview-row {
+  display: grid;
+  grid-template-columns: 74px 1fr 150px;
+  gap: 10px;
+  white-space: pre;
+}
+.hexview-offset {
+  color: var(--text-muted);
+  opacity: 0.8;
+}
+.hexview-hex i {
+  display: inline-block;
+  width: 20px;
+  font-style: normal;
+  color: var(--text);
+}
+.hexview-hex i.gap {
+  margin-right: 6px;
+}
+.hexview-ascii {
+  color: var(--text-muted);
+}
+.hexview-empty {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+.term-hex {
+  position: absolute;
+  inset: 8px 6px 6px 8px;
+}
