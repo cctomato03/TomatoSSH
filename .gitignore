@@ -22,3 +22,6 @@ Thumbs.db
 .env.local
 server/data/
 server/.env
+
+# 打包产物（安装包不入库，用 CI 或本地 tauri build 生成）
+release/

@@ -83,16 +83,57 @@ pnpm tauri:dev        # 打开开发窗口（前端热更新）
 ### 打包
 
 ```bash
-pnpm tauri:build
+pnpm tauri:build                 # 打当前系统全部格式
+pnpm tauri:build --bundles msi   # 只打 Windows MSI
+pnpm tauri:build --bundles nsis  # 只打 Windows NSIS 安装程序
+pnpm tauri:build --bundles deb   # 只打 Ubuntu deb
+pnpm tauri:build --bundles dmg   # 只打 macOS dmg
 ```
 
 产物在 `src-tauri/target/release/bundle/`：
 
-- Windows：`.msi`（WiX）/ `.exe`（NSIS）
+- Windows：`.msi`（WiX）/ `-setup.exe`（NSIS）
 - macOS：`.dmg` / `.app`
 - Linux：`.deb` / `.AppImage`
 
 > 纯前端调试可以用 `pnpm dev`（但 `invoke` 调用需要 Tauri 运行时，浏览器里会提示）。
+> 本次已打好的 Windows 安装包已复制到仓库根目录 `release/`（不入 git）：
+> `TomatoSSH_0.1.0_x64_en-US.msi`、`TomatoSSH_0.1.0_x64-setup.exe`、`TomatoSSH-0.1.0-x64-portable.zip`。
+
+#### ⚠️ 国内网络下打包 Windows 安装包的坑
+
+Tauri 打包 MSI/NSIS 时会从 GitHub 下载 WiX 与 NSIS 工具链，多数国内网络会超时
+（报错 `failed to bundle project: timeout: global`）。两个办法：
+
+1. **预置工具链（已验证可用）**：把 WiX 解压到 Tauri 的缓存目录，打包时就不会再下载。
+
+   ```powershell
+   $dest = "$env:LOCALAPPDATA\tauri\WixTools314"
+   New-Item -ItemType Directory -Force $dest | Out-Null
+   # 用镜像下载（gh-proxy.com / ghfast.top 均可）
+   curl.exe -L -o "$env:TEMP\wix.zip" `
+     "https://gh-proxy.com/https://github.com/wixtoolset/wix3/releases/download/wix3141rtm/wix314-binaries.zip"
+   Expand-Archive "$env:TEMP\wix.zip" -DestinationPath $dest -Force
+   test-path "$dest\candle.exe"   # 必须为 True
+   pnpm tauri:build --bundles msi
+   ```
+
+2. 或直接用 GitHub Actions（`.github/workflows/build.yml`）在 CI 上出包，见下节。
+
+### 跨平台打包：必须"在哪个系统出哪个包"
+
+| 目标平台 | 能否在 Windows 上打 | 说明 |
+|---|---|---|
+| Windows `.msi` / `-setup.exe` | ✅ 本机即可 | 需要 VS Build Tools（C++ 生成工具）+ WebView2 Runtime |
+| macOS `.dmg` / `.app` | ❌ **不能** | 必须在 macOS 上打（依赖 Xcode / clang / SDK），且对外分发还需要 Apple Developer 账号做 codesign + notarization，否则用户首次打开会被 Gatekeeper 拦 |
+| Ubuntu `.deb` / `.AppImage` | ❌ 不建议 | 官方不支持从 Windows 交叉编译；需要 Linux 环境（Ubuntu 实体机 / 虚拟机 / WSL2）并装 `libwebkit2gtk-4.1-dev` 等依赖 |
+
+所以最省事的做法是**用仓库里已备好的 GitHub Actions 矩阵**（`.github/workflows/build.yml`）：
+推一个 tag（如 `git tag v0.1.0 && git push --tags`）或手动触发，CI 会分别在
+`windows-latest`、`macos-latest`（x64 + Apple Silicon）、`ubuntu-22.04` 上出包并上传到 Release。
+
+若没有 GitHub，也可以：Windows 本机出 Windows 包、Ubuntu 机器/WSL2 出 Linux 包、借一台 Mac（或用云 Mac 按小时租）出 macOS 包。
+
 
 ### 常用脚本
 
@@ -241,10 +282,13 @@ cargo run --bin smoke        # 完整冒烟（额外覆盖本地 PTY 终端与 S
 | 前后端 IPC 契约（35 个命令的命令名 / 参数名 / 注册表） | ✅ 通过（`python scripts/check_contract.py`） |
 | 同步服务端编译 | ✅ 通过 |
 | 同步服务端运行 + 接口联调（注册 / 登录 / 密码错误 / 上传 / 拉取 / 版本冲突 409 / 重复注册 409） | ✅ 全部符合预期 |
-| `tauri dev` / `tauri build` 桌面窗口 | ⚠️ 交付环境缺少 MSVC C++ 工具链，无法在此机器完成最终打包，需在装有 VS Build Tools 的机器上执行 |
+| Windows Release 编译（`rustc 1.99.1` + MSVC 14.44 + Windows SDK 10.0.26100） | ✅ 通过（6.5 MB 单文件 exe） |
+| 桌面应用实际启动 | ✅ 启动后窗口标题 `TomatoSSH`、内存 ~23 MB，并在 `%APPDATA%\com.tomatossh.desktop\` 生成加密保险库 `vault.bin`(450B) + `vault.key`(32B)，文件头为 `TSSH1` 魔数、正文为密文 |
+| Windows 安装包 | ✅ `TomatoSSH_0.1.0_x64_en-US.msi`(3.3 MB)、`TomatoSSH_0.1.0_x64-setup.exe`(2.5 MB) |
+| macOS / Linux 安装包 | ⏳ 需在对应系统或 CI 上构建（见「跨平台打包」一节） |
 
-> 由于交付机没有 Visual Studio C++ 生成工具，本次用 `x86_64-pc-windows-gnu` 目标 + rust-lld/zig 做了
-> 交叉验证（这也是 `tools/` 存在的原因）。正式的 `pnpm tauri:build` 请按上面「开发环境」一节装好依赖后执行。
+> 由于交付机最初没有 Visual Studio C++ 生成工具，开发期先用 `x86_64-pc-windows-gnu` 目标 + rust-lld/zig 做了
+> 交叉验证（这也是 `tools/` 存在的原因）；装好 VS Build Tools 后已用官方 MSVC 工具链完成上面表格中的 Release 构建与安装包打包。
 
 
 ---
