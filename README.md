@@ -134,6 +134,15 @@ Tauri 打包 MSI/NSIS 时会从 GitHub 下载 WiX 与 NSIS 工具链，多数国
 
 若没有 GitHub，也可以：Windows 本机出 Windows 包、Ubuntu 机器/WSL2 出 Linux 包、借一台 Mac（或用云 Mac 按小时租）出 macOS 包。
 
+#### CI 常见失败（已在仓库内规避）
+
+| 症状 | 原因 | 处理 |
+|---|---|---|
+| 4 个 job 都在 `pnpm/action-setup` 步骤 **1 秒内失败**，后续全 `skipped` | `package.json` 里的 `packageManager` 已声明 pnpm 版本，workflow 又写了 `with: version`，action 报 `Multiple versions of pnpm specified` | workflow 里只保留 `pnpm/action-setup@v4` + `run_install: false`，版本统一由 `packageManager` 决定 |
+| `unable to parse JSON Tauri config file ... expected value at line 1 column 1` | `tauri.conf.json` 带了 **UTF-8 BOM**（Windows 上用 PowerShell `Set-Content -Encoding UTF8` 会写入 BOM） | 用无 BOM 的 UTF-8 保存；本仓库已清理 |
+| Linux 打包缺 `webkit2gtk` / appindicator | 依赖名在 22.04 应为 `libwebkit2gtk-4.1-dev`、`libayatana-appindicator3-dev` | 见 workflow 的「安装 Linux 打包依赖」步骤 |
+| tag 是 `v1.0.0` 但安装包叫 `0.1.0` | `tauri.conf.json` 的 `version` 与 tag 不一致 | 已统一为 `1.0.0`；发版时记得同步改版本号 |
+
 
 ### 常用脚本
 
