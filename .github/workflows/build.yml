@@ -17,16 +17,16 @@ jobs:
         include:
           - platform: macos-latest
             label: macos-arm64
-            args: "--target aarch64-apple-darwin"
+            args: "--target aarch64-apple-darwin --bundles dmg app"
           - platform: macos-latest
             label: macos-x64
-            args: "--target x86_64-apple-darwin"
+            args: "--target x86_64-apple-darwin --bundles dmg app"
           - platform: ubuntu-22.04
             label: linux-x64
-            args: ""
+            args: "--bundles deb appimage"
           - platform: windows-latest
             label: windows-x64
-            args: ""
+            args: "--bundles msi nsis"
 
     runs-on: ${{ matrix.platform }}
 
@@ -46,8 +46,8 @@ jobs:
             libxdo-dev \
             build-essential curl wget file libssl-dev
 
-      # 注意：不要同时在这里写 version，否则会与 package.json 的 "packageManager" 冲突
-      # 报错：Multiple versions of pnpm specified ... 直接失败。
+      # 注意：不要在这里写 version，否则会与 package.json 的 "packageManager": "pnpm@12.18.0" 冲突，
+      # pnpm/action-setup 会直接报 "Multiple versions of pnpm specified" 并在 1 秒内失败。
       - uses: pnpm/action-setup@v4
         with:
           run_install: false
@@ -59,7 +59,7 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
 
-      # macOS 需要额外装两个目标，才能交叉出 Intel / Apple Silicon 两种包
+      # macOS 需要额外装目标，才能分别产出 Intel / Apple Silicon 包
       - name: 追加 macOS 编译目标
         if: startsWith(matrix.platform, 'macos')
         run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
