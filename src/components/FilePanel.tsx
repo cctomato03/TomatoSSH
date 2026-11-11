@@ -200,7 +200,7 @@ export function FilePanel({ tabId, hostId }: Props) {
 
   const doUpload = async () => {
     const names = [...localSel];
-    if (!names.length) return setErr("请先在左侧选中要上传的文件");
+    if (!names.length) return setErr("请先在左侧选中要上传的文件或文件夹");
     if (!remotePath) return;
     setErr(null);
     for (const name of names) {
@@ -219,7 +219,7 @@ export function FilePanel({ tabId, hostId }: Props) {
 
   const doDownload = async () => {
     const names = [...remoteSel];
-    if (!names.length) return setErr("请先在右侧选中要下载的文件");
+    if (!names.length) return setErr("请先在右侧选中要下载的文件或文件夹");
     if (!localPath) return;
     setErr(null);
     for (const name of names) {
@@ -239,7 +239,7 @@ export function FilePanel({ tabId, hostId }: Props) {
   /** 远程 → 另一台远程主机 */
   const doRemoteToRemote = async () => {
     const names = [...remoteSel];
-    if (!names.length) return setErr("请先在右侧选中要发送的文件");
+    if (!names.length) return setErr("请先在右侧选中要发送的文件或文件夹");
     if (!peerTabId) return setErr("请选择目标连接");
     const peer = tabs.find((t) => t.id === peerTabId);
     if (!peer?.hostId) return;
@@ -304,7 +304,12 @@ export function FilePanel({ tabId, hostId }: Props) {
   };
 
   const doDelete = async (entry: FileEntry, remote: boolean) => {
-    if (!window.confirm(`确认删除 ${entry.name}？${entry.isDir ? "（目录必须为空）" : ""}`)) return;
+    if (
+      !window.confirm(
+        `确认删除 ${entry.name}？${entry.isDir ? "（文件夹及其全部内容会被递归删除）" : ""}`,
+      )
+    )
+      return;
     try {
       if (remote) {
         await api.sftpRemove(sftpId, entry.path, entry.isDir);
@@ -355,10 +360,10 @@ export function FilePanel({ tabId, hostId }: Props) {
         />
 
         <div className="fp-arrows">
-          <button title="上传到远程当前目录" onClick={doUpload}>
+          <button title="上传选中的文件/文件夹到远程当前目录（文件夹会递归传输）" onClick={doUpload}>
             <ArrowRight size={16} />
           </button>
-          <button title="下载到本地当前目录" onClick={doDownload}>
+          <button title="下载选中的文件/文件夹到本地当前目录（文件夹会递归传输）" onClick={doDownload}>
             <ArrowLeft size={16} />
           </button>
         </div>

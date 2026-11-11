@@ -13,7 +13,7 @@
 | # | 需求 | 实现情况 |
 |---|------|----------|
 | 1 | 连接信息管理与本地持久化，密码 / 密钥登录 | ✅ 连接 + 多级分组管理，数据写入 `vault.bin`（AES-256-GCM 加密）；支持密码认证、私钥认证（含 passphrase） |
-| 2 | 远程文件上传下载 + 不同远程主机之间互传 | ✅ 内置 SFTP 双栏文件面板：本地 ⇄ 远程、远程 ⇄ 远程（服务器之间直接对流，不落地本地磁盘） |
+| 2 | 远程文件上传下载 + 不同远程主机之间互传 | ✅ 内置 SFTP 双栏文件面板：本地 ⇄ 远程、远程 ⇄ 远程（服务器之间直接对流，不落地本地磁盘）；**文件和文件夹都支持（文件夹递归传输）** |
 | 3 | 分组 + 左侧连接列表 + 右侧终端，多连接并行 | ✅ 左侧为分组树 / 连接列表 / 搜索，右侧为多标签终端，标签可并行打开多个会话 |
 | 4 | 字号调整 + 主题切换（内置多套美观主题） | ✅ 设置面板可调字号、行高、字体、光标闪烁、回滚缓冲；内置 **8 套主题**（番茄暗夜 / Nord / Dracula / Gruvbox / One Dark / 东京夜色 / 暖阳浅色 / 素白 GitHub） |
 | 5 | 支持操作系统本地终端 | ✅ 侧边栏「本地终端」或在标签栏 `+` 新建，Windows 自动选 `pwsh`/`powershell`/`cmd`，Linux/macOS 使用 `$SHELL` |
@@ -98,7 +98,7 @@ pnpm tauri:build --bundles dmg   # 只打 macOS dmg
 
 > 纯前端调试可以用 `pnpm dev`（但 `invoke` 调用需要 Tauri 运行时，浏览器里会提示）。
 > 本次已打好的 Windows 安装包已复制到仓库根目录 `release/`（不入 git）：
-> `TomatoSSH_0.1.0_x64_en-US.msi`、`TomatoSSH_0.1.0_x64-setup.exe`、`TomatoSSH-0.1.0-x64-portable.zip`。
+> `TomatoSSH_1.0.2_x64_en-US.msi`、`TomatoSSH_1.0.2_x64-setup.exe`、`TomatoSSH-1.0.2-x64-portable.zip`。
 
 #### ⚠️ 国内网络下打包 Windows 安装包的坑
 
@@ -250,7 +250,7 @@ server {
 ## 已知限制 / Roadmap
 
 - SSH 认证目前支持 **密码** 与 **私钥**；`ssh-agent` 转发、跳板机（ProxyJump）、端口转发尚未实现（数据模型已预留）。
-- SFTP 传输支持文件与空目录删除，暂不支持目录递归上传/下载。
+- SFTP 已支持**文件夹递归上传 / 下载 / 远程互传 / 递归删除**；暂不支持断点续传与多连接并发加速。
 - 同步为「整库覆盖 + 按时间合并」，尚未做字段级冲突交互提示。
 - 还没有会话历史 / 命令片段 / 密钥管理（Termius 的 Snippets、Vault）等增值功能。
 
@@ -293,8 +293,9 @@ cargo run --bin smoke        # 完整冒烟（额外覆盖本地 PTY 终端与 S
 | 同步服务端编译 | ✅ 通过 |
 | 同步服务端运行 + 接口联调（注册 / 登录 / 密码错误 / 上传 / 拉取 / 版本冲突 409 / 重复注册 409） | ✅ 全部符合预期 |
 | Windows Release 编译（`rustc 1.99.1` + MSVC 14.44 + Windows SDK 10.0.26100） | ✅ 通过（6.5 MB 单文件 exe） |
+| SFTP 目录传输端到端测试（真实 OpenSSH 服务器） | ✅ `cargo test --lib sftp` 5 项全过：多层目录递归上传 / 下载 / 远程互传 / 递归删除 / 进度事件 |
 | 桌面应用实际启动 | ✅ 启动后窗口标题 `TomatoSSH`、内存 ~23 MB，并在 `%APPDATA%\com.tomatossh.desktop\` 生成加密保险库 `vault.bin`(450B) + `vault.key`(32B)，文件头为 `TSSH1` 魔数、正文为密文 |
-| Windows 安装包 | ✅ `TomatoSSH_1.0.1_x64_en-US.msi`(3.3 MB)、`TomatoSSH_1.0.1_x64-setup.exe`(2.5 MB)、便携版 zip，均在本地 MSVC 工具链下打包并实测可启动 |
+| Windows 安装包 | ✅ `TomatoSSH_1.0.2_x64_en-US.msi`(3.3 MB)、`TomatoSSH_1.0.2_x64-setup.exe`(2.5 MB)、便携版 zip，均在本地 MSVC 工具链下打包并实测可启动 |
 | macOS / Linux 安装包 | ⏳ 需在对应系统或 CI 上构建（见「跨平台打包」一节） |
 
 > 由于交付机最初没有 Visual Studio C++ 生成工具，开发期先用 `x86_64-pc-windows-gnu` 目标 + rust-lld/zig 做了
