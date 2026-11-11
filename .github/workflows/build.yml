@@ -1,13 +1,18 @@
 name: build
 
 # Windows / macOS / Linux 三个平台各自在自己的系统上打包。
-# - 推送 tag（v1.0.0）→ 自动创建 Draft Release 并上传安装包
-# - 手动 Run workflow     → 只把安装包上传为 Actions Artifacts
+# - 推送 tag（v1.0.1）→ 编译 + 创建 Draft Release 并上传安装包
+# - 手动 Run workflow     → 只编译并上传 Actions Artifacts（不建 Release）
 on:
   push:
     tags:
       - "v*"
   workflow_dispatch:
+
+# 创建 Release / 上传资产需要写权限，缺了会报
+#   Error: Resource not accessible by integration (create-a-release)
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -46,8 +51,8 @@ jobs:
             libxdo-dev \
             build-essential curl wget file libssl-dev
 
-      # 注意：不要在这里写 version，否则会与 package.json 的 "packageManager": "pnpm@12.18.0" 冲突，
-      # pnpm/action-setup 会直接报 "Multiple versions of pnpm specified" 并在 1 秒内失败。
+      # 注意：不要在这里写 version，否则会与 package.json 的 "packageManager" 冲突，
+      # pnpm/action-setup 会报 "Multiple versions of pnpm specified" 并秒失败。
       - uses: pnpm/action-setup@v4
         with:
           run_install: false
@@ -71,6 +76,7 @@ jobs:
       - name: 安装前端依赖
         run: pnpm install --frozen-lockfile
 
+      # tag 触发：编译 + 建 Release + 上传资产（tauri-action 一步完成）
       - name: 打包并发布 Release（tag 触发时）
         if: startsWith(github.ref, 'refs/tags/')
         uses: tauri-apps/tauri-action@v0
@@ -84,12 +90,14 @@ jobs:
           prerelease: false
           args: ${{ matrix.args }}
 
+      # 手动触发：只编译
       - name: 仅打包（手动触发时）
         if: "!startsWith(github.ref, 'refs/tags/')"
         run: pnpm tauri build ${{ matrix.args }}
 
-      - name: 上传构建产物（手动触发时）
-        if: "!startsWith(github.ref, 'refs/tags/')"
+      # 无论 Release 是否成功，都把安装包留成 Artifacts，避免白跑一遍
+      - name: 上传构建产物
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: tomatossh-${{ matrix.label }}
@@ -100,3 +108,4 @@ jobs:
             src-tauri/target/**/release/bundle/**/*.deb
             src-tauri/target/**/release/bundle/**/*.AppImage
           if-no-files-found: warn
+          overwrite: true

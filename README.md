@@ -139,9 +139,10 @@ Tauri 打包 MSI/NSIS 时会从 GitHub 下载 WiX 与 NSIS 工具链，多数国
 | 症状 | 原因 | 处理 |
 |---|---|---|
 | 4 个 job 都在 `pnpm/action-setup` 步骤 **1 秒内失败**，后续全 `skipped` | `package.json` 里的 `packageManager` 已声明 pnpm 版本，workflow 又写了 `with: version`，action 报 `Multiple versions of pnpm specified` | workflow 里只保留 `pnpm/action-setup@v4` + `run_install: false`，版本统一由 `packageManager` 决定 |
+| 编译都跑完了，最后一步报 `Error: Resource not accessible by integration`（`create-a-release`） | `GITHUB_TOKEN` 默认只读，工作流没有声明写权限 | workflow 顶部加 `permissions: { contents: write }`；若仍失败，去 Settings → Actions → General → Workflow permissions 选 "Read and write permissions" |
 | `unable to parse JSON Tauri config file ... expected value at line 1 column 1` | `tauri.conf.json` 带了 **UTF-8 BOM**（Windows 上用 PowerShell `Set-Content -Encoding UTF8` 会写入 BOM） | 用无 BOM 的 UTF-8 保存；本仓库已清理 |
 | Linux 打包缺 `webkit2gtk` / appindicator | 依赖名在 22.04 应为 `libwebkit2gtk-4.1-dev`、`libayatana-appindicator3-dev` | 见 workflow 的「安装 Linux 打包依赖」步骤 |
-| tag 是 `v1.0.0` 但安装包叫 `0.1.0` | `tauri.conf.json` 的 `version` 与 tag 不一致 | 已统一为 `1.0.0`；发版时记得同步改版本号 |
+| tag 是 `v1.0.1` 但安装包叫 `1.0.0` | `tauri.conf.json` 的 `version` 与 tag 不一致 | 发版时同步改 `package.json` / `src-tauri/Cargo.toml` / `src-tauri/tauri.conf.json` 三处版本号 |
 
 
 ### 常用脚本
@@ -293,7 +294,7 @@ cargo run --bin smoke        # 完整冒烟（额外覆盖本地 PTY 终端与 S
 | 同步服务端运行 + 接口联调（注册 / 登录 / 密码错误 / 上传 / 拉取 / 版本冲突 409 / 重复注册 409） | ✅ 全部符合预期 |
 | Windows Release 编译（`rustc 1.99.1` + MSVC 14.44 + Windows SDK 10.0.26100） | ✅ 通过（6.5 MB 单文件 exe） |
 | 桌面应用实际启动 | ✅ 启动后窗口标题 `TomatoSSH`、内存 ~23 MB，并在 `%APPDATA%\com.tomatossh.desktop\` 生成加密保险库 `vault.bin`(450B) + `vault.key`(32B)，文件头为 `TSSH1` 魔数、正文为密文 |
-| Windows 安装包 | ✅ `TomatoSSH_0.1.0_x64_en-US.msi`(3.3 MB)、`TomatoSSH_0.1.0_x64-setup.exe`(2.5 MB) |
+| Windows 安装包 | ✅ `TomatoSSH_1.0.1_x64_en-US.msi`(3.3 MB)、`TomatoSSH_1.0.1_x64-setup.exe`(2.5 MB)、便携版 zip，均在本地 MSVC 工具链下打包并实测可启动 |
 | macOS / Linux 安装包 | ⏳ 需在对应系统或 CI 上构建（见「跨平台打包」一节） |
 
 > 由于交付机最初没有 Visual Studio C++ 生成工具，开发期先用 `x86_64-pc-windows-gnu` 目标 + rust-lld/zig 做了
