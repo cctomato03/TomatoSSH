@@ -24,7 +24,9 @@ if (!raw) {
   process.exit(1);
 }
 
-const input = raw.trim().replace(/^v/i, "");
+// 允许 1.2 这种两位写法（tag 里常见），自动补成 1.2.0
+let input = raw.trim().replace(/^v/i, "");
+if (/^\d+\.\d+$/.test(input)) input = `${input}.0`;
 const m = /^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?(?:\+([0-9A-Za-z.-]+))?$/.exec(input);
 if (!m) {
   console.error(`版本号不是合法的 semver: ${raw}`);
