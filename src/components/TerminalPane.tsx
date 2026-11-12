@@ -9,6 +9,8 @@ import { getTheme } from "../lib/themes";
 import type { SerialLines, TabRecord } from "../lib/types";
 import { useVault } from "../store/useVault";
 import { SerialHexView } from "./SerialHexView";
+import { SnippetBar } from "./SnippetBar";
+import { save as saveFileDialog } from "@tauri-apps/plugin-dialog";
 import { useTabs } from "../store/useTabs";
 import { Cable, Loader2, RotateCcw, Send } from "lucide-react";
 
@@ -35,6 +37,7 @@ export function TerminalPane({ tab, active }: Props) {
   const [sendHex, setSendHex] = useState(false);
   const [newline, setNewline] = useState<"none" | "crlf" | "lf" | "cr">("crlf");
   const [history, setHistory] = useState<string[]>([]);
+  const [logPath, setLogPath] = useState<string | null>(null);
   const theme = getTheme(settings.theme);
 
   // 1) 初始化 xterm（只执行一次）
@@ -255,6 +258,30 @@ export function TerminalPane({ tab, active }: Props) {
     }
   };
 
+  /** 串口日志录制开关 */
+  const toggleLog = async () => {
+    try {
+      if (logPath) {
+        const stopped = await api.serialStopLog(tab.id);
+        setLogPath(null);
+        if (stopped) {
+          setNotice(`日志已保存：${stopped.path}（${stopped.bytes} 字节）`);
+        }
+      } else {
+        const name = `serial-${new Date().toISOString().replace(/[:.]/g, "-")}.log`;
+        const picked = await saveFileDialog({
+          title: "选择串口日志保存位置",
+          defaultPath: name,
+        });
+        if (!picked) return;
+        await api.serialStartLog(tab.id, picked);
+        setLogPath(picked);
+      }
+    } catch (e) {
+      setNotice(String(e));
+    }
+  };
+
   const doSend = async () => {
     if (!sendText) return;
     try {
@@ -281,6 +308,7 @@ export function TerminalPane({ tab, active }: Props) {
   return (
     <div className="pane" style={{ display: active ? "flex" : "none" }}>
       <div className="term-wrap">
+        <SnippetBar sessionId={tab.id} onNotice={setNotice} />
         {isSerial && (
           <div className="serial-toolbar">
             <span className="st-group">
@@ -314,6 +342,13 @@ export function TerminalPane({ tab, active }: Props) {
                 onClick={() => setHexMode((v) => !v)}
               >
                 HEX 视图
+              </button>
+              <button
+                className={logPath ? "st-on" : undefined}
+                title={logPath ? `正在录制：${logPath}（点击停止）` : "把收到的数据录制到文件"}
+                onClick={() => void toggleLog()}
+              >
+                {logPath ? "停止录制" : "录制"}
               </button>
             </span>
 

@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use crate::crypto;
 use crate::error::{Error, Result};
 use crate::models::{
-    now_ms, Group, GroupDraft, Host, HostDraft, SerialProfile, Snapshot, VaultData,
+    now_ms, Group, GroupDraft, Host, HostDraft, SerialProfile, Snippet, Snapshot, VaultData,
 };
 
 /// 参与云同步的载荷（不含本机密钥，连接密码在整包加密之内）
@@ -15,6 +15,7 @@ pub struct SyncPayload {
     pub hosts: Vec<Host>,
     pub groups: Vec<Group>,
     pub serials: Vec<SerialProfile>,
+    pub snippets: Vec<Snippet>,
     pub updated_at: i64,
 }
 
@@ -73,10 +74,14 @@ impl VaultStore {
         let mut serials: Vec<SerialProfile> =
             self.data.serials.iter().filter(|s| !s.deleted).cloned().collect();
         serials.sort_by_key(|s| s.label.to_lowercase());
+        let mut snippets: Vec<Snippet> =
+            self.data.snippets.iter().filter(|s| !s.deleted).cloned().collect();
+        snippets.sort_by_key(|s| s.name.to_lowercase());
         Snapshot {
             hosts,
             groups,
             serials,
+            snippets,
             settings: self.data.settings.clone(),
         }
     }
@@ -118,6 +123,8 @@ impl VaultStore {
                     tags: draft.tags,
                     notes: draft.notes,
                     keepalive_secs: draft.keepalive_secs.max(5),
+                    jump_host_id: draft.jump_host_id,
+                    forwards: draft.forwards,
                     host_key_fingerprint: prev.host_key_fingerprint,
                     updated_at: now,
                     deleted: false,
@@ -138,6 +145,8 @@ impl VaultStore {
                     tags: draft.tags,
                     notes: draft.notes,
                     keepalive_secs: draft.keepalive_secs.max(5),
+                    jump_host_id: draft.jump_host_id,
+                    forwards: draft.forwards,
                     host_key_fingerprint: None,
                     updated_at: now,
                     deleted: false,
@@ -226,6 +235,48 @@ impl VaultStore {
         self.save()
     }
 
+    pub fn upsert_snippet(&mut self, mut draft: Snippet) -> Result<Snippet> {
+        if draft.name.trim().is_empty() {
+            return Err(Error::msg("快捷指令名称不能为空"));
+        }
+        if draft.command.trim().is_empty() {
+            return Err(Error::msg("快捷指令内容不能为空"));
+        }
+        let now = now_ms();
+        draft.name = draft.name.trim().to_string();
+        match self
+            .data
+            .snippets
+            .iter_mut()
+            .find(|s| s.id == draft.id && !s.id.is_empty())
+        {
+            Some(existing) => {
+                draft.updated_at = now;
+                draft.deleted = false;
+                *existing = draft.clone();
+            }
+            None => {
+                draft.id = uuid::Uuid::new_v4().to_string();
+                draft.updated_at = now;
+                draft.deleted = false;
+                self.data.snippets.push(draft.clone());
+            }
+        }
+        self.save()?;
+        Ok(draft)
+    }
+
+    pub fn delete_snippet(&mut self, id: &str) -> Result<()> {
+        let now = now_ms();
+        for s in self.data.snippets.iter_mut() {
+            if s.id == id {
+                s.deleted = true;
+                s.updated_at = now;
+            }
+        }
+        self.save()
+    }
+
     pub fn upsert_serial(&mut self, mut draft: SerialProfile) -> Result<SerialProfile> {
         if draft.port_name.trim().is_empty() {
             return Err(Error::msg("请选择或填写串口设备"));
@@ -302,6 +353,7 @@ impl VaultStore {
             hosts: self.data.hosts.clone(),
             groups: self.data.groups.clone(),
             serials: self.data.serials.clone(),
+            snippets: self.data.snippets.clone(),
             updated_at: now_ms(),
         }
     }
@@ -335,6 +387,21 @@ impl VaultStore {
                 }
                 None => {
                     self.data.groups.push(rg);
+                    changed += 1;
+                }
+            }
+        }
+
+        for rsn in remote.snippets {
+            match self.data.snippets.iter_mut().find(|s| s.id == rsn.id) {
+                Some(local) => {
+                    if rsn.updated_at > local.updated_at {
+                        *local = rsn;
+                        changed += 1;
+                    }
+                }
+                None => {
+                    self.data.snippets.push(rsn);
                     changed += 1;
                 }
             }

@@ -1134,3 +1134,65 @@ kbd {
   position: absolute;
   inset: 8px 6px 6px 8px;
 }
+/* ---------------- 快捷指令条 ---------------- */
+.snippet-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--border);
+  font-size: 11px;
+  color: var(--text-muted);
+  min-height: 28px;
+}
+.sb-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+  color: var(--text-muted);
+}
+.sb-chips {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  overflow-x: auto;
+  flex: 1;
+  padding-bottom: 2px;
+}
+.sb-chip {
+  padding: 2px 9px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 11px;
+  white-space: nowrap;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sb-chip:hover {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+}
+.sb-empty {
+  opacity: 0.7;
+}
+.sb-actions {
+  display: flex;
+  gap: 2px;
+}
+.sb-actions button {
+  width: 22px;
+  height: 22px;
+  border-radius: 5px;
+  display: grid;
+  place-items: center;
+  color: var(--text-muted);
+}
+.sb-actions button:hover {
+  background: var(--surface);
+  color: var(--text);
+}

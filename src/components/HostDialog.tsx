@@ -23,6 +23,7 @@ export function HostDialog() {
   const { open, host, groupId } = useUi((s) => s.hostDialog);
   const close = useUi((s) => s.closeHost);
   const groups = useVault((s) => s.groups);
+  const hosts = useVault((s) => s.hosts);
   const saveHost = useVault((s) => s.saveHost);
 
   const [form, setForm] = useState<HostDraft>(empty(null));
@@ -79,6 +80,7 @@ export function HostDialog() {
     try {
       await saveHost({
         ...form,
+        forwards: host?.forwards ?? form.forwards ?? [],
         label: form.label.trim() || `${form.username}@${form.host}`,
         tags: tagText
           .split(",")
@@ -229,6 +231,24 @@ export function HostDialog() {
           </div>
         </>
       )}
+
+      <div className="field">
+        <label>跳板机（ProxyJump，可选）</label>
+        <select
+          value={form.jumpHostId ?? ""}
+          onChange={(e) => patch({ jumpHostId: e.target.value || null })}
+        >
+          <option value="">（直连）</option>
+          {hosts
+            .filter((h) => h.id !== form.id)
+            .map((h) => (
+              <option key={h.id} value={h.id}>
+                {h.label || `${h.username}@${h.host}`}
+              </option>
+            ))}
+        </select>
+        <span className="hint">先登录所选连接，再通过它连接本主机（需要目标主机在跳板机可达）。</span>
+      </div>
 
       <div className="field-row">
         <div className="field">

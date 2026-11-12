@@ -13,7 +13,7 @@ use tokio::task::JoinSet;
 
 use crate::error::{Error, IntoAppError, Result};
 use crate::models::{FileEntry, Host, TransferProgress};
-use crate::ssh::{connect_and_auth, ClientHandler};
+use crate::ssh::{connect_and_auth_via, ClientHandler};
 
 /// 传输分片大小
 const CHUNK: usize = 64 * 1024;
@@ -25,6 +25,9 @@ pub struct SftpEntry {
     /// 仅用于保活：drop 掉 handle 会关闭连接
     #[allow(dead_code)]
     pub handle: Handle<ClientHandler>,
+    /// 走跳板机时同样要保活
+    #[allow(dead_code)]
+    pub jump: Option<Handle<ClientHandler>>,
 }
 
 /// 打开 SFTP 后的返回信息
@@ -270,7 +273,12 @@ fn finish_progress(
 }
 
 impl SftpManager {
-    pub async fn open(&self, id: &str, host: &Host) -> Result<SftpOpened> {
+    pub async fn open(
+        &self,
+        id: &str,
+        host: &Host,
+        jump: Option<&Host>,
+    ) -> Result<SftpOpened> {
         let existing = {
             let guard = self.sessions.lock()?;
             guard.get(id).map(|e| e.session.clone())
@@ -286,9 +294,10 @@ impl SftpManager {
             });
         }
 
-        let outcome = connect_and_auth(host).await?;
+        let outcome = connect_and_auth_via(host, jump).await?;
         let fingerprint = outcome.fingerprint.clone();
         let handle = outcome.handle;
+        let jump_handle = outcome.jump;
         let channel = handle.channel_open_session().await.app_err()?;
         channel.request_subsystem(true, "sftp").await.app_err()?;
         let session = SftpSession::new(channel.into_stream())
@@ -304,6 +313,7 @@ impl SftpManager {
             SftpEntry {
                 session: Arc::new(session),
                 handle,
+                jump: jump_handle,
             },
         );
         Ok(SftpOpened { home, fingerprint })
@@ -1205,7 +1215,7 @@ mod e2e {
             let sink = Collecting(std::sync::Mutex::new(Vec::new()));
             let mgr = SftpManager::default();
             let host = test_host(port);
-            let opened = mgr.open("s1", &host).await.expect("连接 SFTP");
+            let opened = mgr.open("s1", &host, None).await.expect("连接 SFTP");
             let home = opened.home.clone();
             let tag = uuid::Uuid::new_v4().to_string();
 
@@ -1279,7 +1289,7 @@ mod e2e {
             let _ = std::fs::remove_file(&up_local);
 
             // 4) 远程 → 远程（目录）
-            mgr.open("s2", &host).await.expect("第二个 SFTP 会话");
+            mgr.open("s2", &host, None).await.expect("第二个 SFTP 会话");
             let copy_to = join_remote(&home, &format!("tsftp-copy-{tag}"));
             mgr.copy_remote(&sink, "s1", &remote_dir, "s2", &copy_to)
                 .await

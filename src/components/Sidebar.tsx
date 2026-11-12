@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import {
   Cable,
   ChevronDown,
+  Waypoints,
   ChevronRight,
   FolderClosed,
   FolderOpen,
@@ -24,6 +25,7 @@ import { useVault } from "../store/useVault";
 import { api } from "../lib/api";
 import { useUi } from "../store/useUi";
 import { ContextMenu, type CtxItem } from "./ContextMenu";
+import { ForwardsDialog } from "./ForwardsDialog";
 import { SerialDialog } from "./SerialDialog";
 
 interface MenuState {
@@ -59,6 +61,7 @@ export function Sidebar() {
   const [serialDialog, setSerialDialog] = useState<{ open: boolean; profile: SerialProfile | null }>(
     { open: false, profile: null },
   );
+  const [forwardHostId, setForwardHostId] = useState<string | null>(null);
 
   const activeHostIds = useMemo(
     () => new Set(tabs.filter((t) => t.kind === "ssh" && t.hostId).map((t) => t.hostId as string)),
@@ -114,6 +117,11 @@ export function Sidebar() {
       items: [
         { label: "连接", icon: <Play size={13} />, onClick: () => connect(host) },
         { label: "在文件管理器中打开", icon: <FolderOpen size={13} />, onClick: () => connect(host, true) },
+        {
+          label: "端口转发…",
+          icon: <Waypoints size={13} />,
+          onClick: () => setForwardHostId(host.id),
+        },
         { kind: "sep" },
         {
           label: "编辑",
@@ -439,6 +447,10 @@ export function Sidebar() {
       </div>
 
       {menu && <ContextMenu x={menu.x} y={menu.y} items={menu.items} onClose={() => setMenu(null)} />}
+
+      {forwardHostId && (
+        <ForwardsDialog hostId={forwardHostId} onClose={() => setForwardHostId(null)} />
+      )}
 
       {serialDialog.open && (
         <SerialDialog

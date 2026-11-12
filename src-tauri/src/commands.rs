@@ -1,5 +1,6 @@
 use std::sync::{Arc, Mutex};
 
+use serde::Serialize;
 use tauri::{AppHandle, State};
 
 use crate::error::{Error, Result};
@@ -7,6 +8,7 @@ use crate::local::LocalManager;
 use crate::localfs;
 use crate::models::*;
 use crate::queue::{EnqueueJob, TransferJob, TransferQueue};
+use crate::forward::{ActiveForward, ForwardManager};
 use crate::serial::SerialManager;
 use crate::sftp::SftpManager;
 use crate::ssh::SshManager;
@@ -20,6 +22,7 @@ pub struct AppState {
     pub sftp: Arc<SftpManager>,
     pub local: Arc<LocalManager>,
     pub serial: Arc<SerialManager>,
+    pub forwards: Arc<ForwardManager>,
     pub queue: Arc<TransferQueue>,
 }
 
@@ -30,6 +33,7 @@ impl AppState {
         sftp: Arc<SftpManager>,
         local: Arc<LocalManager>,
         serial: Arc<SerialManager>,
+        forwards: Arc<ForwardManager>,
         queue: Arc<TransferQueue>,
     ) -> Self {
         Self {
@@ -38,6 +42,7 @@ impl AppState {
             sftp,
             local,
             serial,
+            forwards,
             queue,
         }
     }
@@ -112,10 +117,27 @@ pub async fn ssh_open(
         vault.host(&host_id)?
     };
 
+    let jump = jump_host_of(&state, &host)?;
+    let jump_for_forward = jump.clone();
     let opened = state
         .ssh
-        .open_terminal(app, session_id, host.clone(), cols, rows)
+        .open_terminal(app, session_id, host.clone(), cols, rows, jump)
         .await?;
+
+    // 打开终端的连接如果有 autoStart 的转发规则，顺手启动
+    for rule in host.forwards.iter().filter(|r| r.auto_start) {
+        let _ = state
+            .forwards
+            .start(
+                &host,
+                jump_for_forward.clone(),
+                &rule.bind_host,
+                rule.bind_port,
+                &rule.dest_host,
+                rule.dest_port,
+            )
+            .await;
+    }
 
     // TOFU：首次连接记录服务器公钥指纹
     if host.host_key_fingerprint.is_none() {
@@ -209,7 +231,8 @@ pub async fn sftp_open(
         let vault = state.vault.lock()?;
         vault.host(&host_id)?
     };
-    let opened = state.sftp.open(&session_id, &host).await?;
+    let jump = jump_host_of(&state, &host)?;
+    let opened = state.sftp.open(&session_id, &host, jump.as_ref()).await?;
     if host.host_key_fingerprint.is_none() {
         if let Some(fp) = opened.fingerprint.as_deref() {
             let mut vault = state.vault.lock()?;
@@ -339,6 +362,20 @@ pub fn local_copy(from: String, to: String) -> Result<()> {
     localfs::copy(&from, &to)
 }
 
+// ---------------------------------------------------------------- 快捷指令
+
+#[tauri::command]
+pub fn snippet_save(state: State<'_, AppState>, draft: Snippet) -> Result<Snippet> {
+    let mut vault = state.vault.lock()?;
+    vault.upsert_snippet(draft)
+}
+
+#[tauri::command]
+pub fn snippet_delete(state: State<'_, AppState>, id: String) -> Result<()> {
+    let mut vault = state.vault.lock()?;
+    vault.delete_snippet(&id)
+}
+
 // ---------------------------------------------------------------- 串口
 
 #[tauri::command]
@@ -366,11 +403,19 @@ pub fn serial_open(
     session_id: String,
     profile_id: String,
 ) -> Result<String> {
-    let profile = {
+    let mut profile = {
         let vault = state.vault.lock()?;
         vault.serial(&profile_id)?
     };
-    state.serial.open(app, session_id, &profile)
+    let opened = state.serial.open(app, session_id, &profile)?;
+    // 记住这次真正用上的端口（USB 重新枚举后能自动找回）
+    if profile.last_port_name.as_deref() != Some(opened.port_name.as_str()) {
+        profile.last_port_name = Some(opened.port_name.clone());
+        if let Ok(mut vault) = state.vault.lock() {
+            let _ = vault.upsert_serial(profile);
+        }
+    }
+    Ok(opened.banner)
 }
 
 /// 手动设置 DTR / RTS 电平
@@ -428,6 +473,141 @@ pub fn app_version() -> Result<String> {
     Ok(env!("CARGO_PKG_VERSION").to_string())
 }
 
+
+// ---------------------------------------------------------------- 串口日志 / 波特率探测
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LogStatus {
+    pub path: String,
+    pub bytes: u64,
+}
+
+#[tauri::command]
+pub fn serial_start_log(state: State<'_, AppState>, session_id: String, path: String) -> Result<()> {
+    state.serial.start_log(&session_id, &path)
+}
+
+#[tauri::command]
+pub fn serial_stop_log(state: State<'_, AppState>, session_id: String) -> Result<Option<LogStatus>> {
+    Ok(state
+        .serial
+        .stop_log(&session_id)?
+        .map(|(path, bytes)| LogStatus { path, bytes }))
+}
+
+#[tauri::command]
+pub fn serial_log_status(state: State<'_, AppState>, session_id: String) -> Result<Option<LogStatus>> {
+    Ok(state
+        .serial
+        .log_status(&session_id)
+        .map(|(path, bytes)| LogStatus { path, bytes }))
+}
+
+#[tauri::command]
+pub fn serial_probe_baud(
+    state: State<'_, AppState>,
+    port_name: String,
+    candidates: Option<Vec<u32>>,
+    per_try_ms: Option<u64>,
+) -> Result<crate::serial::BaudProbe> {
+    let list = candidates.unwrap_or_else(|| {
+        vec![
+            9600, 19200, 38400, 57600, 115200, 230400, 460800, 921600, 4800, 2400, 1200,
+        ]
+    });
+    let per_try = std::time::Duration::from_millis(per_try_ms.unwrap_or(400).clamp(120, 3000));
+    state.serial.probe_baud(&port_name, &list, per_try)
+}
+
+// ---------------------------------------------------------------- 端口转发（本地 -L）
+
+#[tauri::command]
+pub async fn forward_start(
+    state: State<'_, AppState>,
+    host_id: String,
+    bind_host: String,
+    bind_port: u16,
+    dest_host: String,
+    dest_port: u16,
+) -> Result<ActiveForward> {
+    let host = {
+        let vault = state.vault.lock()?;
+        vault.host(&host_id)?
+    };
+    let jump = jump_host_of(&state, &host)?;
+    let info = state
+        .forwards
+        .start(&host, jump, &bind_host, bind_port, &dest_host, dest_port)
+        .await?;
+    // 记下实际用的端口（bind_port 为 0 时由系统分配）
+    let mut vault = state.vault.lock()?;
+    if let Ok(h) = vault.host(&host_id) {
+        let mut updated = HostDraft {
+            id: Some(h.id.clone()),
+            group_id: h.group_id.clone(),
+            label: h.label.clone(),
+            host: h.host.clone(),
+            port: h.port,
+            username: h.username.clone(),
+            auth: h.auth.clone(),
+            color: h.color.clone(),
+            tags: h.tags.clone(),
+            notes: h.notes.clone(),
+            keepalive_secs: h.keepalive_secs,
+            jump_host_id: h.jump_host_id.clone(),
+            forwards: h.forwards.clone(),
+        };
+        let mut touched = false;
+        for rule in updated.forwards.iter_mut() {
+            if rule.dest_host == info.dest_host
+                && rule.dest_port == info.dest_port
+                && (rule.bind_port == 0 || rule.bind_port == info.bind_port)
+            {
+                rule.bind_port = info.bind_port;
+                touched = true;
+                break;
+            }
+        }
+        if touched {
+            let _ = vault.upsert_host(updated);
+        }
+    }
+    Ok(info)
+}
+
+#[tauri::command]
+pub fn forward_list(state: State<'_, AppState>) -> Result<Vec<ActiveForward>> {
+    Ok(state.forwards.list())
+}
+
+#[tauri::command]
+pub fn forward_stop(state: State<'_, AppState>, id: String) -> Result<()> {
+    state.forwards.stop(&id)
+}
+
+/// 启动某主机上配置的所有 autoStart 规则
+#[tauri::command]
+pub async fn forward_start_auto(state: State<'_, AppState>, host_id: String) -> Result<usize> {
+    let host = {
+        let vault = state.vault.lock()?;
+        vault.host(&host_id)?
+    };
+    let jump = jump_host_of(&state, &host)?;
+    let rules: Vec<_> = host.forwards.iter().filter(|r| r.auto_start).cloned().collect();
+    let mut started = 0usize;
+    for rule in rules {
+        if state
+            .forwards
+            .start(&host, jump.clone(), &rule.bind_host, rule.bind_port, &rule.dest_host, rule.dest_port)
+            .await
+            .is_ok()
+        {
+            started += 1;
+        }
+    }
+    Ok(started)
+}
 // ---------------------------------------------------------------- 传输队列（后台常驻）
 
 #[tauri::command]
@@ -459,6 +639,18 @@ pub fn clear_finished_transfers(state: State<'_, AppState>) -> Result<()> {
 }
 
 // ---------------------------------------------------------------- 云同步
+
+/// 取出跳板机配置（没有则 None）
+fn jump_host_of(state: &AppState, host: &Host) -> Result<Option<Host>> {
+    let Some(jump_id) = host.jump_host_id.as_deref() else {
+        return Ok(None);
+    };
+    if jump_id.is_empty() || jump_id == host.id {
+        return Ok(None);
+    }
+    let vault = state.vault.lock()?;
+    Ok(vault.host(jump_id).ok())
+}
 
 fn sync_state_of(vault: &VaultStore) -> SyncStateDto {
     let secrets = &vault.data.secrets;

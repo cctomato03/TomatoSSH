@@ -1,6 +1,7 @@
 mod commands;
 mod crypto;
 mod error;
+mod forward;
 mod local;
 mod queue;
 mod localfs;
@@ -43,6 +44,7 @@ pub fn run() {
                 sftp,
                 std::sync::Arc::new(crate::local::LocalManager::default()),
                 std::sync::Arc::new(crate::serial::SerialManager::default()),
+                std::sync::Arc::new(crate::forward::ForwardManager::default()),
                 queue,
             ));
             Ok(())
@@ -85,6 +87,8 @@ pub fn run() {
             commands::retry_transfer,
             commands::clear_finished_transfers,
             commands::app_version,
+            commands::snippet_save,
+            commands::snippet_delete,
             commands::serial_list_ports,
             commands::serial_save,
             commands::serial_delete,
@@ -92,6 +96,14 @@ pub fn run() {
             commands::serial_set_line,
             commands::serial_get_lines,
             commands::serial_pulse_reset,
+            commands::serial_start_log,
+            commands::serial_stop_log,
+            commands::serial_log_status,
+            commands::serial_probe_baud,
+            commands::forward_start,
+            commands::forward_list,
+            commands::forward_stop,
+            commands::forward_start_auto,
             commands::sync_state,
             commands::sync_login,
             commands::sync_register,

@@ -8,6 +8,38 @@ export interface AuthConfig {
   passphrase?: string | null;
 }
 
+/** 端口转发规则（本机监听 → 经 SSH 到目标） */
+export interface PortForwardRule {
+  id: string;
+  bindHost: string;
+  bindPort: number;
+  destHost: string;
+  destPort: number;
+  autoStart: boolean;
+}
+
+/** 正在运行的转发 */
+export interface ActiveForward {
+  id: string;
+  hostId: string;
+  bindHost: string;
+  bindPort: number;
+  destHost: string;
+  destPort: number;
+  startedAt: number;
+  connections: number;
+}
+
+/** 快捷指令 */
+export interface Snippet {
+  id: string;
+  name: string;
+  command: string;
+  autoRun: boolean;
+  updatedAt: number;
+  deleted: boolean;
+}
+
 export interface HostRecord {
   id: string;
   groupId: string | null;
@@ -20,6 +52,8 @@ export interface HostRecord {
   tags: string[];
   notes: string | null;
   keepaliveSecs: number;
+  jumpHostId?: string | null;
+  forwards?: PortForwardRule[];
   hostKeyFingerprint?: string | null;
   updatedAt: number;
   deleted: boolean;
@@ -57,6 +91,7 @@ export interface VaultSnapshot {
   hosts: HostRecord[];
   groups: GroupRecord[];
   serials: SerialProfile[];
+  snippets: Snippet[];
   settings: AppSettings;
 }
 
@@ -107,6 +142,8 @@ export interface HostDraft {
   tags?: string[];
   notes?: string | null;
   keepaliveSecs?: number;
+  jumpHostId?: string | null;
+  forwards?: PortForwardRule[];
 }
 
 /** 串口连接配置 */
@@ -121,6 +158,9 @@ export interface SerialProfile {
   flowControl: string;
   /** 掉线后是否自动重连 */
   autoReconnect: boolean;
+  lastPortName?: string | null;
+  usbVid?: number | null;
+  usbPid?: number | null;
   updatedAt: number;
   deleted: boolean;
 }

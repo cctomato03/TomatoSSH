@@ -1,15 +1,18 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type {
+  ActiveForward,
   AppSettings,
   EnqueueJob,
   FileEntry,
   GroupRecord,
   HostDraft,
   HostRecord,
+  PortForwardRule,
   SerialLines,
   SerialPortInfo,
   SerialProfile,
+  Snippet,
   SyncResult,
   SyncStateDto,
   TransferJob,
@@ -77,6 +80,10 @@ export const api = {
   openFileManager: (hostId?: string | null) =>
     call<void>("open_file_manager", { hostId: hostId ?? null }),
 
+  // ---------- 快捷指令 ----------
+  snippetSave: (draft: Snippet) => call<Snippet>("snippet_save", { draft }),
+  snippetDelete: (id: string) => call<void>("snippet_delete", { id }),
+
   // ---------- 串口 ----------
   serialListPorts: () => call<SerialPortInfo[]>("serial_list_ports"),
   serialSave: (draft: SerialProfile) => call<SerialProfile>("serial_save", { draft }),
@@ -88,6 +95,18 @@ export const api = {
   serialGetLines: (sessionId: string) =>
     call<SerialLines>("serial_get_lines", { sessionId }),
   serialPulseReset: (sessionId: string) => call<void>("serial_pulse_reset", { sessionId }),
+  serialStartLog: (sessionId: string, path: string) =>
+    call<void>("serial_start_log", { sessionId, path }),
+  serialStopLog: (sessionId: string) =>
+    call<{ path: string; bytes: number } | null>("serial_stop_log", { sessionId }),
+  serialLogStatus: (sessionId: string) =>
+    call<{ path: string; bytes: number } | null>("serial_log_status", { sessionId }),
+  /** 自动探测波特率（要求设备正在持续输出数据） */
+  serialProbeBaud: (portName: string, perTryMs?: number) =>
+    call<{ baudRate: number | null; score: number; sample: string }>("serial_probe_baud", {
+      portName,
+      perTryMs: perTryMs ?? null,
+    }),
 
   /** 按原始字节写终端（HEX 发送用；SSH/本地终端也可用） */
   termWriteBytes: (sessionId: string, data: Uint8Array) =>
@@ -95,6 +114,19 @@ export const api = {
 
   // ---------- App 信息 ----------
   appVersion: () => call<string>("app_version"),
+
+  // ---------- 端口转发 ----------
+  forwardStart: (hostId: string, rule: PortForwardRule) =>
+    call<ActiveForward>("forward_start", {
+      hostId,
+      bindHost: rule.bindHost,
+      bindPort: rule.bindPort,
+      destHost: rule.destHost,
+      destPort: rule.destPort,
+    }),
+  forwardStartAuto: (hostId: string) => call<number>("forward_start_auto", { hostId }),
+  forwardList: () => call<ActiveForward[]>("forward_list"),
+  forwardStop: (id: string) => call<void>("forward_stop", { id }),
 
   // ---------- 后台传输队列 ----------
   enqueueTransfers: (jobs: EnqueueJob[]) => call<TransferJob[]>("enqueue_transfers", { jobs }),

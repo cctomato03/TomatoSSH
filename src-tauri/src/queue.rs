@@ -317,7 +317,13 @@ impl TransferQueue {
     async fn session_for(&self, job_id: &str, role: &str, host_id: &str) -> Result<String> {
         let key = format!("queue:{job_id}:{role}");
         let host = self.host_of(host_id)?;
-        self.inner.sftp.open(&key, &host).await?;
+        // 支持经跳板机
+        let jump = host
+            .jump_host_id
+            .as_deref()
+            .filter(|id| !id.is_empty() && *id != host.id)
+            .and_then(|id| self.host_of(id).ok());
+        self.inner.sftp.open(&key, &host, jump.as_ref()).await?;
         Ok(key)
     }
 

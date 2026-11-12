@@ -44,6 +44,10 @@ pub struct Host {
     pub tags: Vec<String>,
     pub notes: Option<String>,
     pub keepalive_secs: u64,
+    /// 跳板机（先连它，再通过它连目标主机）
+    pub jump_host_id: Option<String>,
+    /// 端口转发规则（本机 → 目标）
+    pub forwards: Vec<PortForwardRule>,
     /// TOFU：首次连接时记录的主机公钥指纹
     pub host_key_fingerprint: Option<String>,
     pub updated_at: i64,
@@ -64,6 +68,8 @@ impl Default for Host {
             tags: Vec::new(),
             notes: None,
             keepalive_secs: default_keepalive(),
+            jump_host_id: None,
+            forwards: Vec::new(),
             host_key_fingerprint: None,
             updated_at: 0,
             deleted: false,
@@ -96,6 +102,8 @@ pub struct HostDraft {
     pub tags: Vec<String>,
     pub notes: Option<String>,
     pub keepalive_secs: u64,
+    pub jump_host_id: Option<String>,
+    pub forwards: Vec<PortForwardRule>,
 }
 
 impl Default for HostDraft {
@@ -112,6 +120,62 @@ impl Default for HostDraft {
             tags: Vec::new(),
             notes: None,
             keepalive_secs: default_keepalive(),
+            jump_host_id: None,
+            forwards: Vec::new(),
+        }
+    }
+}
+
+/// 端口转发规则（本机监听 → 通过 SSH 连到目标）
+#[derive(Serialize, Deserialize, Clone, Debug)]
+#[serde(rename_all = "camelCase", default)]
+pub struct PortForwardRule {
+    pub id: String,
+    /// 本地监听地址，一般 127.0.0.1
+    pub bind_host: String,
+    pub bind_port: u16,
+    pub dest_host: String,
+    pub dest_port: u16,
+    /// 打开该连接的终端时自动启动
+    pub auto_start: bool,
+}
+
+impl Default for PortForwardRule {
+    fn default() -> Self {
+        Self {
+            id: String::new(),
+            bind_host: "127.0.0.1".into(),
+            bind_port: 0,
+            dest_host: "127.0.0.1".into(),
+            dest_port: 0,
+            auto_start: false,
+        }
+    }
+}
+
+/// 快捷指令（SSH / 本地终端 / 串口通用）
+#[derive(Serialize, Deserialize, Clone, Debug)]
+#[serde(rename_all = "camelCase", default)]
+pub struct Snippet {
+    pub id: String,
+    pub name: String,
+    /// 要写入终端的内容（可以多行）
+    pub command: String,
+    /// 点击后是否自动回车执行
+    pub auto_run: bool,
+    pub updated_at: i64,
+    pub deleted: bool,
+}
+
+impl Default for Snippet {
+    fn default() -> Self {
+        Self {
+            id: String::new(),
+            name: String::new(),
+            command: String::new(),
+            auto_run: true,
+            updated_at: 0,
+            deleted: false,
         }
     }
 }
@@ -242,6 +306,11 @@ pub struct SerialProfile {
     pub flow_control: String,
     /// 掉线（USB 被拔等）后是否自动重连
     pub auto_reconnect: bool,
+    /// 上次成功打开的端口名（USB 重新枚举成 COMx 变了也能找回）
+    pub last_port_name: Option<String>,
+    /// 选端口时记录的 USB VID/PID，用于断线后重新定位设备
+    pub usb_vid: Option<u16>,
+    pub usb_pid: Option<u16>,
     pub updated_at: i64,
     pub deleted: bool,
 }
@@ -258,6 +327,9 @@ impl Default for SerialProfile {
             stop_bits: 1,
             flow_control: "none".into(),
             auto_reconnect: true,
+            last_port_name: None,
+            usb_vid: None,
+            usb_pid: None,
             updated_at: 0,
             deleted: false,
         }
@@ -291,6 +363,7 @@ pub struct VaultData {
     pub hosts: Vec<Host>,
     pub groups: Vec<Group>,
     pub serials: Vec<SerialProfile>,
+    pub snippets: Vec<Snippet>,
     pub settings: Settings,
     pub secrets: DeviceSecrets,
 }
@@ -301,6 +374,7 @@ pub struct Snapshot {
     pub hosts: Vec<Host>,
     pub groups: Vec<Group>,
     pub serials: Vec<SerialProfile>,
+    pub snippets: Vec<Snippet>,
     pub settings: Settings,
 }
 

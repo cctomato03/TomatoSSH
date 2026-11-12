@@ -28,7 +28,8 @@ pub mod queue;
 pub mod sftp;
 
 #[path = "../../../src-tauri/src/local.rs"]
-pub mod local;
+pub mod forward;
+mod local;
 
 #[path = "../../../src-tauri/src/localfs.rs"]
 pub mod localfs;

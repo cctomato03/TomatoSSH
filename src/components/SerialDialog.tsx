@@ -34,6 +34,8 @@ export function SerialDialog({ profile, onClose }: Props) {
   const [loadingPorts, setLoadingPorts] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [probing, setProbing] = useState(false);
+  const [probeInfo, setProbeInfo] = useState<string | null>(null);
 
   useEffect(() => {
     setForm(profile ?? emptyProfile());
@@ -59,6 +61,30 @@ export function SerialDialog({ profile, onClose }: Props) {
   }, []);
 
   const patch = (p: Partial<SerialProfile>) => setForm((f) => ({ ...f, ...p }));
+
+  /** 自动探测波特率：需要设备正在持续输出数据 */
+  const probeBaud = async () => {
+    if (!form.portName.trim()) {
+      setError("请先选择串口设备");
+      return;
+    }
+    setProbing(true);
+    setProbeInfo(null);
+    setError(null);
+    try {
+      const r = await api.serialProbeBaud(form.portName.trim(), 400);
+      if (r.baudRate) {
+        setForm((f) => ({ ...f, baudRate: r.baudRate as number }));
+        setProbeInfo(`探测到 ${r.baudRate}（可信度 ${r.score}%），样本：${r.sample.slice(0, 60)}`);
+      } else {
+        setProbeInfo(r.sample || "未收到数据，无法判断波特率");
+      }
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setProbing(false);
+    }
+  };
 
   const submit = async () => {
     setError(null);
@@ -149,6 +175,7 @@ export function SerialDialog({ profile, onClose }: Props) {
       <div className="field-row3">
         <div className="field">
           <label>波特率</label>
+          <div style={{ display: "flex", gap: 4 }}>
           <select
             value={BAUD_PRESETS.includes(form.baudRate) ? String(form.baudRate) : "__custom__"}
             onChange={(e) => {
@@ -163,6 +190,15 @@ export function SerialDialog({ profile, onClose }: Props) {
             ))}
             <option value="__custom__">自定义…</option>
           </select>
+          <button
+            className="btn"
+            title="自动探测波特率（设备需要正在输出数据）"
+            disabled={probing}
+            onClick={() => void probeBaud()}
+          >
+            {probing ? "探测中…" : "探测"}
+          </button>
+          </div>
         </div>
         <div className="field">
           <label>数据位</label>
@@ -201,6 +237,8 @@ export function SerialDialog({ profile, onClose }: Props) {
           </select>
         </div>
       </div>
+
+      {probeInfo && <div className="hint" style={{ color: "var(--success)" }}>{probeInfo}</div>}
 
       {!BAUD_PRESETS.includes(form.baudRate) && (
         <div className="field">
