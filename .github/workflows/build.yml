@@ -100,7 +100,8 @@ jobs:
           releaseName: "TomatoSSH ${{ github.ref_name }}"
           releaseBody: "安装包：Windows 用 .msi 或 -setup.exe；macOS 用 .dmg；Linux 用 .deb / .AppImage。详见 README。"
           releaseDraft: false
-          prerelease: false
+          # tag 里带连字符（如 v1.0.0-rc / v1.1.0-beta.1）就标记为预发布，避免被当成正式 Latest
+          prerelease: ${{ contains(github.ref_name, '-') }}
           args: ${{ matrix.args }}
 
       # 手动触发：只编译
