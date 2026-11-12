@@ -173,16 +173,13 @@ export function ForwardsDialog({ hostId, onClose }: Props) {
               (a) => a.destHost === r.destHost && a.destPort === r.destPort,
             );
             return (
-              <div
-                key={r.id}
-                style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 10px" }}
-              >
-                <span style={{ flex: 1, minWidth: 0, fontSize: 12 }}>
+              <div key={r.id} className="rule-item" style={{ fontSize: 12 }}>
+                <span className="snippet-main">
                   <b>
                     127.0.0.1:{running ? running.bindPort : r.bindPort || "随机"} →{" "}
                     {r.destHost}:{r.destPort}
                   </b>
-                  <span className="hint" style={{ display: "block" }}>
+                  <span className="hint" style={{ display: "block", whiteSpace: "normal" }}>
                     {running
                       ? `运行中 · 已建立 ${running.connections} 个连接`
                       : r.autoStart

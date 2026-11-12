@@ -294,6 +294,7 @@ textarea:focus {
   display: flex;
   flex-direction: column;
   min-width: 0;
+  min-height: 0;
 }
 
 .tabbar {
@@ -365,6 +366,7 @@ textarea:focus {
   flex: 1;
   position: relative;
   min-height: 0;
+  overflow: hidden;
   background: var(--bg);
 }
 
@@ -373,18 +375,26 @@ textarea:focus {
   inset: 0;
   display: flex;
   min-height: 0;
+  overflow: hidden;
 }
 
 .term-wrap {
   flex: 1;
   min-width: 0;
+  min-height: 0;
+  /* 关键：纵向 flex，让「快捷指令条 / 串口工具栏 + 终端」一起受限于窗口高度 */
+  display: flex;
+  flex-direction: column;
   position: relative;
   padding: 6px 4px 2px 8px;
 }
 
 .term-host {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
   width: 100%;
-  height: 100%;
+  overflow: hidden;
 }
 .term-host .xterm {
   height: 100%;
@@ -966,22 +976,56 @@ kbd {
   border: 1px solid var(--border);
   border-radius: 7px;
 }
-.group-list button {
+.group-list > button {
   display: block;
   width: 100%;
   text-align: left;
   padding: 6px 10px;
   font-size: 12px;
 }
-.group-list button:hover {
+.group-list > button:hover {
   background: var(--input);
 }
-.group-list button.on {
+.group-list > button.on {
   color: var(--accent);
+}
+
+/* 快捷指令 / 转发规则的行：文字占满，图标按钮固定宽度 */
+.snippet-item,
+.rule-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border);
+}
+.snippet-item > .snippet-main,
+.rule-item > .snippet-main {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.snippet-item > .snippet-main > b,
+.rule-item > .snippet-main > b {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.snippet-item .snippet-cmd {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: ui-monospace, Consolas, monospace;
+}
+.snippet-item > .icon-btn,
+.rule-item > .icon-btn {
+  flex: 0 0 auto;
 }
 
 /* ---------------- 串口工具栏 / HEX 视图 ---------------- */
 .serial-toolbar {
+  flex: none;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -1131,11 +1175,13 @@ kbd {
   font-size: 11px;
 }
 .term-hex {
-  position: absolute;
-  inset: 8px 6px 6px 8px;
+  /* HEX 视图：作为 term-wrap 的 flex 子项，与工具栏共享高度，不越出窗口 */
+  flex: 1;
+  min-height: 0;
 }
 /* ---------------- 快捷指令条 ---------------- */
 .snippet-bar {
+  flex: none;
   display: flex;
   align-items: center;
   gap: 8px;

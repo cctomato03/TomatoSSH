@@ -171,28 +171,10 @@ export function SnippetsDialog({ snippet, onClose }: Props) {
                 {groupName}（{list.length}）
               </div>
               {list.map((s) => (
-                <div
-                  key={s.id}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 8,
-                    padding: "6px 10px",
-                    borderBottom: "1px solid var(--border)",
-                  }}
-                >
-                  <span style={{ flex: 1, minWidth: 0 }}>
+                <div key={s.id} className="snippet-item">
+                  <span className="snippet-main">
                     <b>{s.name}</b>
-                    <span
-                      className="hint"
-                      style={{
-                        display: "block",
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                        whiteSpace: "nowrap",
-                        fontFamily: "ui-monospace, Consolas, monospace",
-                      }}
-                    >
+                    <span className="snippet-cmd">
                       {s.command}
                       {s.autoRun ? " ⏎" : ""}
                     </span>

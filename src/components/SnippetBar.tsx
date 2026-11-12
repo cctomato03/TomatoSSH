@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Plus, Search, Settings2, X, Zap } from "lucide-react";
+import { Search, Settings2, X, Zap } from "lucide-react";
 import { api } from "../lib/api";
 import type { Snippet } from "../lib/types";
 import { useVault } from "../store/useVault";
@@ -133,11 +133,8 @@ export function SnippetBar({ sessionId, onNotice }: Props) {
         >
           <Search size={13} />
         </button>
-        <button title="新建快捷指令" onClick={() => setDialog({ open: true, snippet: null })}>
-          <Plus size={13} />
-        </button>
         <button
-          title="管理快捷指令（右键某个指令可编辑）"
+          title="管理快捷指令（新建 / 编辑 / 删除 / 分组）"
           onClick={() => setDialog({ open: true, snippet: null })}
         >
           <Settings2 size={13} />
