@@ -161,6 +161,17 @@ VERSION="${GITHUB_REF_NAME#v}"      # tag v1.2.1 → 1.2.1
 node scripts/set-version.mjs "$VERSION"
 ```
 
+**预发布版本（RC）注意**：Windows 的 MSI(WiX) 要求预发布标识必须是**纯数字且 ≤65535**，`1.0.0-rc` 这种会直接报
+`optional pre-release identifier in app version must be numeric-only ...`。所以默认策略是：
+
+```bash
+node scripts/set-version.mjs v1.0.0-rc    # → 应用版本 1.0.0（tag 仍叫 v1.0.0-rc，Release 名也带 rc）
+node scripts/set-version.mjs v1.0.0-rc --keep-pre  # → 应用版本 1.0.0-rc（只能出 NSIS/AppImage/dmg，不能出 MSI）
+```
+
+CI 的「版本号对齐 git tag」步骤走的是默认策略，所以推 `v1.0.0-rc` 也能四平台全绿，安装包文件名会是 `TomatoSSH_1.0.0_x64_...`，
+而 Release 标题/标签仍是 `v1.0.0-rc`。
+
 本地发版也可用同一个脚本一次改四处：
 
 ```bash

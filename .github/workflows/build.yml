@@ -39,6 +39,8 @@ jobs:
       - uses: actions/checkout@v4
 
       # 版本号跟 git tag 走：tag v1.2.1 → 应用/安装包版本 1.2.1
+      # 预发布 tag（如 v1.0.0-rc）：默认只取数字部分 1.0.0（Windows MSI 不支持非数字预发布标识），
+      # Release/tag 名仍是 v1.0.0-rc；若不需要 MSI，可把下面命令改成 --keep-pre 保留 -rc。
       - name: 版本号对齐 git tag
         if: startsWith(github.ref, 'refs/tags/')
         shell: bash
