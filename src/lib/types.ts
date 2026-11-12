@@ -34,6 +34,8 @@ export interface ActiveForward {
 export interface Snippet {
   id: string;
   name: string;
+  /** 分组名，空字符串表示未分组 */
+  group: string;
   command: string;
   autoRun: boolean;
   updatedAt: number;
@@ -84,6 +86,10 @@ export interface AppSettings {
   cursorBlink: boolean;
   scrollback: number;
   copyOnSelect: boolean;
+  /** 串口日志目录（空 = 首次录制时选择） */
+  serialLogDir: string;
+  /** 串口日志格式：raw | timestamped */
+  serialLogMode: string;
   sync: SyncConfig;
 }
 

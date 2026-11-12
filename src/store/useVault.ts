@@ -18,6 +18,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   cursorBlink: true,
   scrollback: 8000,
   copyOnSelect: false,
+  serialLogDir: "",
+  serialLogMode: "raw",
   sync: { serverUrl: "", email: "", autoSync: false, lastSyncAt: null },
 };
 

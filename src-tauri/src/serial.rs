@@ -28,14 +28,195 @@ pub struct SerialLines {
     pub cd: bool,
 }
 
-/// 串口日志录制状态
+/// 日志格式：原始字节 / 带时间戳的文本
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum LogMode {
+    Raw,
+    Timestamped,
+}
+
+impl LogMode {
+    fn parse(s: &str) -> Self {
+        match s.trim().to_ascii_lowercase().as_str() {
+            "timestamped" | "ts" | "text" | "log" => Self::Timestamped,
+            _ => Self::Raw,
+        }
+    }
+
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Raw => "raw",
+            Self::Timestamped => "timestamped",
+        }
+    }
+}
+
+fn now_date() -> String {
+    chrono::Local::now().format("%Y-%m-%d").to_string()
+}
+
+fn now_stamp() -> String {
+    chrono::Local::now().format("%Y-%m-%d %H:%M:%S%.3f").to_string()
+}
+
+/// 把端口名变成安全的文件名片段：COM3 → COM3，/dev/ttyUSB0 → ttyUSB0
+fn port_for_file(port: &str) -> String {
+    let cleaned: String = port
+        .trim()
+        .chars()
+        .map(|c| match c {
+            '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|' => '_',
+            other => other,
+        })
+        .collect();
+    let trimmed = cleaned.trim_matches('_').to_string();
+    if trimmed.is_empty() {
+        "serial".to_string()
+    } else {
+        trimmed
+    }
+}
+
+/// 非可打印字节转义成 \xNN，方便人读
+fn sanitize_bytes(bytes: &[u8]) -> String {
+    let mut out = String::with_capacity(bytes.len());
+    for b in bytes {
+        match b {
+            b'\t' => out.push('\t'),
+            0x20..=0x7e => out.push(*b as char),
+            0x80..=0xff => out.push(*b as char), // 保留 UTF-8 多字节（下面统一按 UTF-8 处理）
+            other => out.push_str(&format!("\\x{other:02X}")),
+        }
+    }
+    out
+}
+
+/// 串口日志：按天分文件，支持原始字节 / 带时间戳两种格式
 struct LogSink {
-    file: std::fs::File,
+    dir: std::path::PathBuf,
+    port: String,
+    mode: LogMode,
+    date: String,
     path: String,
-    written: u64,
+    file: std::fs::File,
+    bytes: u64,
+    /// timestamped 模式下未凑满一行的残留
+    pending: Vec<u8>,
+}
+
+impl LogSink {
+    fn open(dir: &std::path::Path, port: &str, mode: LogMode) -> Result<Self> {
+        std::fs::create_dir_all(dir)
+            .map_err(|e| Error::msg(format!("创建日志目录失败（{}）：{e}", dir.display())))?;
+        let date = now_date();
+        let path = dir.join(format!("{}-{date}.log", port_for_file(port)));
+        let mut file = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&path)
+            .map_err(|e| Error::msg(format!("打开日志文件失败（{}）：{e}", path.display())))?;
+        if mode == LogMode::Timestamped {
+            let _ = writeln!(
+                file,
+                "# TomatoSSH 串口日志 | {port} | {} | 开始于 {}",
+                mode.as_str(),
+                now_stamp()
+            );
+        }
+        Ok(Self {
+            dir: dir.to_path_buf(),
+            port: port.to_string(),
+            mode,
+            date,
+            path: path.to_string_lossy().to_string(),
+            file,
+            bytes: 0,
+            pending: Vec::new(),
+        })
+    }
+
+    /// 跨天时自动换文件（先把当天没换行的残片落到旧文件里）
+    fn roll_if_needed(&mut self) -> Result<()> {
+        let today = now_date();
+        if today == self.date {
+            return Ok(());
+        }
+        if self.mode == LogMode::Timestamped && !self.pending.is_empty() {
+            let rest = std::mem::take(&mut self.pending);
+            let text = format!("[{}] {}\n", now_stamp(), sanitize_bytes(&rest));
+            self.file
+                .write_all(text.as_bytes())
+                .map_err(|e| Error::msg(format!("写日志失败：{e}")))?;
+            self.bytes += text.len() as u64;
+        }
+        std::fs::create_dir_all(&self.dir).map_err(|e| {
+            Error::msg(format!("创建日志目录失败（{}）：{e}", self.dir.display()))
+        })?;
+        let path = self.dir.join(format!("{}-{today}.log", port_for_file(&self.port)));
+        let mut file = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&path)
+            .map_err(|e| Error::msg(format!("切换日志文件失败（{}）：{e}", path.display())))?;
+        if self.mode == LogMode::Timestamped {
+            let _ = writeln!(
+                file,
+                "# TomatoSSH 串口日志 | {} | {} | 换日至 {}",
+                self.port,
+                self.mode.as_str(),
+                now_stamp()
+            );
+        }
+        self.file = file;
+        self.date = today;
+        self.path = path.to_string_lossy().to_string();
+        Ok(())
+    }
+
+    fn write_chunk(&mut self, data: &[u8]) -> Result<()> {
+        self.roll_if_needed()?;
+        match self.mode {
+            LogMode::Raw => {
+                self.file
+                    .write_all(data)
+                    .map_err(|e| Error::msg(format!("写日志失败：{e}")))?;
+                self.bytes += data.len() as u64;
+            }
+            LogMode::Timestamped => {
+                self.pending.extend_from_slice(data);
+                let mut connected: Vec<String> = Vec::new();
+                while let Some(pos) = self.pending.iter().position(|b| *b == b'\n') {
+                    let line: Vec<u8> = self.pending.drain(..=pos).collect();
+                    let line = line.strip_suffix(b"\n").unwrap_or(&line);
+                    let line = line.strip_suffix(b"\r").unwrap_or(line);
+                    connected.push(sanitize_bytes(line));
+                }
+                // 长时间没有换行也要落盘，避免丢数据
+                if self.pending.len() > 8192 {
+                    let rest = std::mem::take(&mut self.pending);
+                    connected.push(sanitize_bytes(&rest));
+                }
+                for line in connected {
+                    let text = format!("[{}] {line}\n", now_stamp());
+                    self.file
+                        .write_all(text.as_bytes())
+                        .map_err(|e| Error::msg(format!("写日志失败：{e}")))?;
+                    self.bytes += text.len() as u64;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn flush(&mut self) {
+        use std::io::Write as _;
+        let _ = self.file.flush();
+    }
 }
 
 struct SerialSession {
+    /// 端口名（日志文件名用）
+    port: String,
     /// 可替换的写句柄：自动重连成功后会换成新句柄
     writer: Arc<Mutex<Option<Box<dyn SerialPort>>>>,
     /// (dtr, rts)
@@ -255,6 +436,7 @@ impl SerialManager {
         self.sessions.lock()?.insert(
             session_id.clone(),
             SerialSession {
+                port: used_port.clone(),
                 writer: writer.clone(),
                 lines: lines.clone(),
                 log: log.clone(),
@@ -277,10 +459,7 @@ impl SerialManager {
                     Ok(n) => {
                         if let Ok(mut guard) = log.lock() {
                             if let Some(sink) = guard.as_mut() {
-                                use std::io::Write as _;
-                                if sink.file.write_all(&buf[..n]).is_ok() {
-                                    sink.written += n as u64;
-                                }
+                                let _ = sink.write_chunk(&buf[..n]);
                             }
                         }
                         let _ = app_data.emit(&format!("term-data:{sid}"), b64_encode(&buf[..n]));
@@ -452,26 +631,18 @@ impl SerialManager {
         Ok(())
     }
 
-    /// 开始把收到的数据写入文件
-    pub fn start_log(&self, session_id: &str, path: &str) -> Result<()> {
+    /// 开始录制：按天分文件写入 `dir`，`mode` 支持 raw / timestamped
+    pub fn start_log(&self, session_id: &str, dir: &str, mode: &str) -> Result<()> {
         let guard = self.sessions.lock()?;
         let session = guard
             .get(session_id)
             .ok_or_else(|| Error::msg("串口会话不存在或已关闭"))?;
-        let file = std::fs::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(path)
-            .map_err(|e| Error::msg(format!("打开日志文件失败（{path}）：{e}")))?;
+        let sink = LogSink::open(std::path::Path::new(dir), &session.port, LogMode::parse(mode))?;
         let mut slot = session
             .log
             .lock()
             .map_err(|_| Error::msg("日志状态锁错误"))?;
-        *slot = Some(LogSink {
-            file,
-            path: path.to_string(),
-            written: 0,
-        });
+        *slot = Some(sink);
         Ok(())
     }
 
@@ -485,11 +656,9 @@ impl SerialManager {
             .log
             .lock()
             .map_err(|_| Error::msg("日志状态锁错误"))?;
-        Ok(slot.take().map(|s| {
-            use std::io::Write as _;
-            let mut f = s.file;
-            let _ = f.flush();
-            (s.path, s.written)
+        Ok(slot.take().map(|mut s| {
+            s.flush();
+            (s.path, s.bytes)
         }))
     }
 
@@ -498,7 +667,7 @@ impl SerialManager {
         let guard = self.sessions.lock().ok()?;
         let session = guard.get(session_id)?;
         let slot = session.log.lock().ok()?;
-        slot.as_ref().map(|s| (s.path.clone(), s.written))
+        slot.as_ref().map(|s| (s.path.clone(), s.bytes))
     }
 
     pub fn close(&self, session_id: &str) {
@@ -662,6 +831,75 @@ mod tests {
         assert_eq!(json, r#"{"dtr":true,"rts":false,"cts":true,"cd":false}"#);
     }
 
+
+    #[test]
+    fn log_mode_and_file_names() {
+        assert!(LogMode::parse("raw") == LogMode::Raw);
+        assert!(LogMode::parse("timestamped") == LogMode::Timestamped);
+        assert!(LogMode::parse("LOG") == LogMode::Timestamped);
+        assert!(LogMode::parse("") == LogMode::Raw);
+        assert_eq!(LogMode::Raw.as_str(), "raw");
+        assert_eq!(port_for_file("COM3"), "COM3");
+        assert_eq!(port_for_file("/dev/ttyUSB0"), "dev_ttyUSB0");
+        assert_eq!(port_for_file("  /dev/cu.usbserial-1420  "), "dev_cu.usbserial-1420");
+        assert_eq!(port_for_file("   "), "serial");
+    }
+
+    #[test]
+    fn sanitize_escapes_control_bytes() {
+        let s = sanitize_bytes(&[b'O', b'K', 0x00, 0x01, b'\t', b'd', b'o', b'n', b'e']);
+        assert!(s.contains("\\x00"), "控制字符应转义：{s}");
+        assert!(s.contains("\\x01"), "{s}");
+        assert!(s.contains('\t'), "Tab 应保留：{s}");
+        assert!(s.contains("done"), "{s}");
+    }
+
+    #[test]
+    fn timestamped_log_writes_lines_and_rolls_by_day() {
+        let dir = std::env::temp_dir().join(format!("tslog-{}", uuid::Uuid::new_v4()));
+        let mut sink = LogSink::open(&dir, "COM_TEST", LogMode::Timestamped).expect("open log");
+        sink.write_chunk(b"first line\nsecond").expect("chunk1");
+        sink.write_chunk(b" line\n").expect("chunk2");
+        sink.write_chunk(b"no newline tail").expect("chunk3");
+        sink.flush();
+        let path = std::path::PathBuf::from(&sink.path);
+        assert!(path.exists(), "日志文件应存在：{}", sink.path);
+        let text = std::fs::read_to_string(&path).unwrap();
+        // 头部说明 + 两整行带时间戳 + 第三行暂未落盘
+        assert!(text.starts_with("# TomatoSSH 串口日志"), "应写头部：{text}");
+        assert!(text.contains("] first line"), "第一行错了：{text}");
+        assert!(text.contains("] second line"), "跨块拼接的行错了：{text}");
+        assert!(!text.contains("no newline tail") || text.contains("no newline"), "{text}");
+        let lines_with_ts = text.lines().filter(|l| l.starts_with('[')).count();
+        assert_eq!(lines_with_ts, 2, "应有两行带时间戳：{text}");
+
+        // 跨天换文件：切到一个新目录模拟"第二天"，应新建文件并写换日说明
+        let day2 = dir.join("day2");
+        sink.dir = day2.clone();
+        sink.date = "2000-01-01".to_string();
+        sink.write_chunk(b"new day\n").expect("roll");
+        sink.flush();
+        assert_eq!(sink.date, now_date(), "跨天后应更新为当天日期");
+        assert!(sink.path.contains("day2"), "应切换到新文件：{}", sink.path);
+        let new_text = std::fs::read_to_string(&sink.path).unwrap();
+        assert!(new_text.contains("换日至"), "换日应写说明：{new_text}");
+        assert!(new_text.contains("] new day"), "新文件应包含新数据：{new_text}");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn raw_log_keeps_bytes_untouched() {
+        let dir = std::env::temp_dir().join(format!("tslogr-{}", uuid::Uuid::new_v4()));
+        let mut sink = LogSink::open(&dir, "/dev/ttyX", LogMode::Raw).expect("open log");
+        let payload = [0u8, 1, 2, 255, b'\n', b'A'];
+        sink.write_chunk(&payload).expect("write raw");
+        sink.flush();
+        let bytes = std::fs::read(&sink.path).unwrap();
+        assert_eq!(bytes, payload, "raw 模式必须原样写入");
+        assert_eq!(sink.bytes, payload.len() as u64);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
     #[test]
     fn open_invalid_port_gives_chinese_error() {
         let profile = SerialProfile {

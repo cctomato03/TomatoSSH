@@ -484,8 +484,13 @@ pub struct LogStatus {
 }
 
 #[tauri::command]
-pub fn serial_start_log(state: State<'_, AppState>, session_id: String, path: String) -> Result<()> {
-    state.serial.start_log(&session_id, &path)
+pub fn serial_start_log(
+    state: State<'_, AppState>,
+    session_id: String,
+    dir: String,
+    mode: String,
+) -> Result<()> {
+    state.serial.start_log(&session_id, &dir, &mode)
 }
 
 #[tauri::command]

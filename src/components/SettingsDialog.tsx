@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Palette, RotateCcw, Type } from "lucide-react";
+import { open as openDirDialog } from "@tauri-apps/plugin-dialog";
 import { api } from "../lib/api";
 import { THEMES, getTheme } from "../lib/themes";
 import { DEFAULT_SETTINGS, useVault } from "../store/useVault";
@@ -135,6 +136,43 @@ export function SettingsDialog() {
           />
           <span className="range-val">{settings.scrollback}</span>
         </div>
+      </div>
+
+      <div className="field">
+        <label>串口日志目录（按天分文件：<code>&lt;端口&gt;-YYYY-MM-DD.log</code>）</label>
+        <div style={{ display: "flex", gap: 6 }}>
+          <input
+            value={settings.serialLogDir}
+            readOnly
+            placeholder="未设置（首次点「录制」时会让你选目录）"
+            style={{ flex: 1, minWidth: 0 }}
+          />
+          <button
+            className="btn"
+            onClick={async () => {
+              const picked = await openDirDialog({ directory: true, multiple: false, title: "选择串口日志目录" });
+              if (typeof picked === "string") update({ serialLogDir: picked });
+            }}
+          >
+            选择…
+          </button>
+          {settings.serialLogDir && (
+            <button className="btn ghost" onClick={() => update({ serialLogDir: "" })}>
+              清空
+            </button>
+          )}
+        </div>
+      </div>
+
+      <div className="field">
+        <label>串口日志格式</label>
+        <select
+          value={settings.serialLogMode || "raw"}
+          onChange={(e) => update({ serialLogMode: e.target.value })}
+        >
+          <option value="raw">原始字节（不改动任何内容，适合固件协议/后续解析）</option>
+          <option value="timestamped">带时间戳文本（每行加 [日期 时间]，控制字符转义为 \xNN）</option>
+        </select>
       </div>
 
       <div className="switch">

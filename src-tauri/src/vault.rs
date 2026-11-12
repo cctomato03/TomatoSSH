@@ -76,7 +76,12 @@ impl VaultStore {
         serials.sort_by_key(|s| s.label.to_lowercase());
         let mut snippets: Vec<Snippet> =
             self.data.snippets.iter().filter(|s| !s.deleted).cloned().collect();
-        snippets.sort_by_key(|s| s.name.to_lowercase());
+        snippets.sort_by(|a, b| {
+            a.group
+                .to_lowercase()
+                .cmp(&b.group.to_lowercase())
+                .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
+        });
         Snapshot {
             hosts,
             groups,
@@ -244,6 +249,7 @@ impl VaultStore {
         }
         let now = now_ms();
         draft.name = draft.name.trim().to_string();
+        draft.group = draft.group.trim().to_string();
         match self
             .data
             .snippets

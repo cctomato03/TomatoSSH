@@ -10,7 +10,7 @@ import type { SerialLines, TabRecord } from "../lib/types";
 import { useVault } from "../store/useVault";
 import { SerialHexView } from "./SerialHexView";
 import { SnippetBar } from "./SnippetBar";
-import { save as saveFileDialog } from "@tauri-apps/plugin-dialog";
+import { open as openDirDialog } from "@tauri-apps/plugin-dialog";
 import { useTabs } from "../store/useTabs";
 import { Cable, Loader2, RotateCcw, Send } from "lucide-react";
 
@@ -268,14 +268,21 @@ export function TerminalPane({ tab, active }: Props) {
           setNotice(`日志已保存：${stopped.path}（${stopped.bytes} 字节）`);
         }
       } else {
-        const name = `serial-${new Date().toISOString().replace(/[:.]/g, "-")}.log`;
-        const picked = await saveFileDialog({
-          title: "选择串口日志保存位置",
-          defaultPath: name,
-        });
-        if (!picked) return;
-        await api.serialStartLog(tab.id, picked);
-        setLogPath(picked);
+        // 日志目录：优先用设置里的，没设置就先让用户挑一个
+        let dir = settings.serialLogDir;
+        if (!dir) {
+          const picked = await openDirDialog({
+            title: "选择串口日志目录（按天分文件：<端口>-YYYY-MM-DD.log）",
+            directory: true,
+            multiple: false,
+          });
+          if (!picked || typeof picked !== "string") return;
+          dir = picked;
+          useVault.getState().updateSettings({ serialLogDir: dir });
+        }
+        const mode = settings.serialLogMode || "raw";
+        await api.serialStartLog(tab.id, dir, mode);
+        setLogPath(dir);
       }
     } catch (e) {
       setNotice(String(e));

@@ -95,8 +95,8 @@ export const api = {
   serialGetLines: (sessionId: string) =>
     call<SerialLines>("serial_get_lines", { sessionId }),
   serialPulseReset: (sessionId: string) => call<void>("serial_pulse_reset", { sessionId }),
-  serialStartLog: (sessionId: string, path: string) =>
-    call<void>("serial_start_log", { sessionId, path }),
+  serialStartLog: (sessionId: string, dir: string, mode: string) =>
+    call<void>("serial_start_log", { sessionId, dir, mode }),
   serialStopLog: (sessionId: string) =>
     call<{ path: string; bytes: number } | null>("serial_stop_log", { sessionId }),
   serialLogStatus: (sessionId: string) =>

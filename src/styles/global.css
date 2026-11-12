@@ -1196,3 +1196,46 @@ kbd {
   background: var(--surface);
   color: var(--text);
 }
+/* 快捷指令：分组下拉 + 搜索 + 分组前缀 */
+.sb-group {
+  padding: 2px 4px;
+  font-size: 11px;
+  max-width: 130px;
+}
+.sb-search {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--input);
+  color: var(--text-muted);
+}
+.sb-search input {
+  border: none;
+  background: transparent;
+  padding: 1px 2px;
+  font-size: 11px;
+  width: 150px;
+  color: var(--text);
+  outline: none;
+}
+.sb-search button {
+  display: grid;
+  place-items: center;
+  color: var(--text-muted);
+}
+.sb-chip-group {
+  display: inline-block;
+  margin-right: 5px;
+  padding: 0 4px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  color: var(--text-muted);
+  font-size: 10px;
+}
+.sb-actions button.on {
+  background: var(--surface);
+  color: var(--accent);
+}

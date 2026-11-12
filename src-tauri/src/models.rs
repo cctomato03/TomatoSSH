@@ -159,6 +159,8 @@ impl Default for PortForwardRule {
 pub struct Snippet {
     pub id: String,
     pub name: String,
+    /// 分组名（空字符串表示未分组）
+    pub group: String,
     /// 要写入终端的内容（可以多行）
     pub command: String,
     /// 点击后是否自动回车执行
@@ -172,6 +174,7 @@ impl Default for Snippet {
         Self {
             id: String::new(),
             name: String::new(),
+            group: String::new(),
             command: String::new(),
             auto_run: true,
             updated_at: 0,
@@ -257,6 +260,10 @@ pub struct Settings {
     pub cursor_blink: bool,
     pub scrollback: u32,
     pub copy_on_select: bool,
+    /// 串口日志目录（空表示未设置，录制时会先让用户选）
+    pub serial_log_dir: String,
+    /// 串口日志格式：raw | timestamped
+    pub serial_log_mode: String,
     pub sync: SyncSettings,
 }
 
@@ -270,6 +277,8 @@ impl Default for Settings {
             cursor_blink: true,
             scrollback: 8000,
             copy_on_select: false,
+            serial_log_dir: String::new(),
+            serial_log_mode: "raw".into(),
             sync: SyncSettings::default(),
         }
     }
