@@ -6,6 +6,7 @@ import { useUi } from "../store/useUi";
 import { useVault } from "../store/useVault";
 import { api } from "../lib/api";
 import { Modal } from "./Modal";
+import { PasswordInput } from "./PasswordInput";
 
 const empty = (groupId: string | null): HostDraft => ({
   label: "",
@@ -197,11 +198,11 @@ export function HostDialog() {
       {form.auth.type === "password" ? (
         <div className="field">
           <label>登录密码</label>
-          <input
-            type="password"
+          <PasswordInput
             value={form.auth.password ?? ""}
-            onChange={(e) => patchAuth({ password: e.target.value })}
+            onChange={(v) => patchAuth({ password: v })}
             placeholder="密码仅保存在本机加密保险库中"
+            title="显示明文密码"
           />
         </div>
       ) : (
@@ -222,11 +223,11 @@ export function HostDialog() {
           </div>
           <div className="field">
             <label>私钥口令（可选）</label>
-            <input
-              type="password"
+            <PasswordInput
               value={form.auth.passphrase ?? ""}
-              onChange={(e) => patchAuth({ passphrase: e.target.value })}
+              onChange={(v) => patchAuth({ passphrase: v })}
               placeholder="私钥有 passphrase 时填写"
+              title="显示明文口令"
             />
           </div>
         </>

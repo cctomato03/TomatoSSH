@@ -1285,3 +1285,42 @@ kbd {
   background: var(--surface);
   color: var(--accent);
 }
+/* ---------------- 密码输入框（带显示明文按钮） ---------------- */
+.pw-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+.pw-wrap > input {
+  flex: 1;
+  min-width: 0;
+  padding-right: 32px;
+  font-family: ui-monospace, Consolas, monospace;
+  letter-spacing: 0.5px;
+}
+.pw-wrap > input[type="password"] {
+  letter-spacing: 2px;
+}
+.pw-toggle {
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 24px;
+  height: 24px;
+  border-radius: 5px;
+  display: grid;
+  place-items: center;
+  color: var(--text-muted);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+}
+.pw-toggle:hover {
+  background: var(--surface);
+  color: var(--text);
+}
+.pw-toggle.on {
+  color: var(--accent);
+}

@@ -5,6 +5,7 @@ import type { SyncStateDto } from "../lib/types";
 import { useUi } from "../store/useUi";
 import { useVault } from "../store/useVault";
 import { Modal } from "./Modal";
+import { PasswordInput } from "./PasswordInput";
 
 export function SyncDialog() {
   const open = useUi((s) => s.syncOpen);
@@ -152,14 +153,14 @@ export function SyncDialog() {
           </div>
           <div className="field">
             <label>密码（同时用于加密云端数据，请牢记）</label>
-            <input
-              type="password"
+            <PasswordInput
               value={password}
-              onChange={(e) => setPassword(e.target.value)}
+              onChange={setPassword}
               onKeyDown={(e) => {
                 if (e.key === "Enter") doAuth();
               }}
               placeholder="至少 6 位"
+              title="显示明文密码"
             />
           </div>
           <button className="btn primary block" disabled={!!busy} onClick={doAuth}>
