@@ -1324,3 +1324,29 @@ kbd {
 .pw-toggle.on {
   color: var(--accent);
 }
+/* ---------------- 断线重连操作条 ---------------- */
+.reconnect-bar {
+  position: absolute;
+  left: 50%;
+  bottom: 14px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 10px 8px 14px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
+  border: 1px solid var(--border);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(6px);
+  z-index: 6;
+}
+.rb-text {
+  font-size: 12px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.reconnect-bar .btn {
+  padding: 3px 10px;
+  font-size: 12px;
+}

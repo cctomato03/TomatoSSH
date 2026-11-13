@@ -12,7 +12,7 @@ import { SerialHexView } from "./SerialHexView";
 import { SnippetBar } from "./SnippetBar";
 import { open as openDirDialog } from "@tauri-apps/plugin-dialog";
 import { useTabs } from "../store/useTabs";
-import { Cable, Loader2, RotateCcw, Send } from "lucide-react";
+import { Cable, Loader2, PlugZap, RotateCcw, Send } from "lucide-react";
 
 interface Props {
   tab: TabRecord;
@@ -38,6 +38,8 @@ export function TerminalPane({ tab, active }: Props) {
   const [newline, setNewline] = useState<"none" | "crlf" | "lf" | "cr">("crlf");
   const [history, setHistory] = useState<string[]>([]);
   const [logPath, setLogPath] = useState<string | null>(null);
+  const [reconnecting, setReconnecting] = useState(false);
+  const reconnectingRef = useRef(false);
   const theme = getTheme(settings.theme);
 
   // 1) 初始化 xterm（只执行一次）
@@ -118,6 +120,62 @@ export function TerminalPane({ tab, active }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab.id]);
 
+  /** 打开 / 重新打开会话（三种终端共用；失败时把错误写进终端并置为 error 状态） */
+  const openSession = async (term: Terminal) => {
+    try {
+      fitRef.current?.fit();
+    } catch {
+      /* ignore */
+    }
+    const cols = term.cols || 100;
+    const rows = term.rows || 30;
+    try {
+      if (tab.kind === "ssh" && tab.hostId) {
+        const host = hosts.find((h) => h.id === tab.hostId);
+        patchTab(tab.id, { status: "connecting", error: null });
+        term.writeln(
+          `\x1b[38;5;244m正在连接 ${host?.username ?? ""}@${host?.host ?? ""}:${host?.port ?? 22} ...\x1b[0m`,
+        );
+        const banner = await api.sshOpen(tab.id, tab.hostId, cols, rows);
+        patchTab(tab.id, { status: "connected", error: null });
+        if (banner) term.writeln(`\x1b[38;5;244m${banner}\x1b[0m`);
+      } else if (tab.kind === "serial" && tab.serialId) {
+        patchTab(tab.id, { status: "connecting", error: null });
+        term.writeln(`\x1b[38;5;244m正在打开串口 ...\x1b[0m`);
+        const banner = await api.serialOpen(tab.id, tab.serialId);
+        patchTab(tab.id, { status: "connected", error: null });
+        if (banner) term.writeln(`\x1b[38;5;244m${banner}\x1b[0m`);
+      } else {
+        patchTab(tab.id, { status: "connecting", error: null });
+        const shellInfo = await api.localOpen(tab.id, cols, rows, tab.cwd ?? null);
+        patchTab(tab.id, { status: "connected", error: null });
+        if (shellInfo) term.writeln(`\x1b[38;5;244m${shellInfo}\x1b[0m`);
+      }
+    } catch (err) {
+      const msg = typeof err === "string" ? err : err instanceof Error ? err.message : String(err);
+      setNotice(msg);
+      patchTab(tab.id, { status: "error", error: msg });
+      term.writeln(`\r\n\x1b[1;31m连接失败：${msg}\x1b[0m`);
+    }
+  };
+
+  /** 断线 / 结束后「重新连接」 */
+  const reconnect = async () => {
+    const term = termRef.current;
+    if (!term || reconnecting) return;
+    setReconnecting(true);
+    reconnectingRef.current = true;
+    setNotice(null);
+    term.writeln(`\r\n\x1b[38;5;244m—— 重新连接 ——\x1b[0m`);
+    try {
+      await openSession(term);
+    } finally {
+      setReconnecting(false);
+      reconnectingRef.current = false;
+      term.focus();
+    }
+  };
+
   // 2) 建立会话（只执行一次）
   useEffect(() => {
     if (startedRef.current) return;
@@ -129,16 +187,9 @@ export function TerminalPane({ tab, active }: Props) {
     let disposed = false;
 
     const boot = async () => {
-      try {
-        fitRef.current?.fit();
-      } catch {
-        /* ignore */
-      }
-      const cols = term.cols || 100;
-      const rows = term.rows || 30;
-
       const dataUn = await onTermData(tab.id, (chunk) => term.write(chunk));
       const exitUn = await onTermExit(tab.id, (info) => {
+        if (reconnectingRef.current) return; // 旧连接的收尾事件，忽略
         patchTab(tab.id, { status: "closed" });
         if (info?.message) term.writeln(`\r\n\x1b[1;31m[连接已关闭] ${info.message}\x1b[0m`);
         else term.writeln(`\r\n\x1b[1;33m[会话已结束${info?.code != null ? `，退出码 ${info.code}` : ""}]\x1b[0m`);
@@ -150,32 +201,7 @@ export function TerminalPane({ tab, active }: Props) {
       }
       unlisteners.push(dataUn, exitUn);
 
-      try {
-        if (tab.kind === "ssh" && tab.hostId) {
-          const host = hosts.find((h) => h.id === tab.hostId);
-          patchTab(tab.id, { status: "connecting" });
-          term.writeln(`\x1b[38;5;244m正在连接 ${host?.username ?? ""}@${host?.host ?? ""}:${host?.port ?? 22} ...\x1b[0m`);
-          const banner = await api.sshOpen(tab.id, tab.hostId, cols, rows);
-          patchTab(tab.id, { status: "connected" });
-          if (banner) term.writeln(`\x1b[38;5;244m${banner}\x1b[0m`);
-        } else if (tab.kind === "serial" && tab.serialId) {
-          patchTab(tab.id, { status: "connecting" });
-          term.writeln(`\x1b[38;5;244m正在打开串口 ...\x1b[0m`);
-          const banner = await api.serialOpen(tab.id, tab.serialId);
-          patchTab(tab.id, { status: "connected" });
-          if (banner) term.writeln(`\x1b[38;5;244m${banner}\x1b[0m`);
-        } else {
-          patchTab(tab.id, { status: "connecting" });
-          const shellInfo = await api.localOpen(tab.id, cols, rows, tab.cwd ?? null);
-          patchTab(tab.id, { status: "connected" });
-          if (shellInfo) term.writeln(`\x1b[38;5;244m${shellInfo}\x1b[0m`);
-        }
-      } catch (err) {
-        const msg = typeof err === "string" ? err : err instanceof Error ? err.message : String(err);
-        setNotice(msg);
-        patchTab(tab.id, { status: "error", error: msg });
-        term.writeln(`\r\n\x1b[1;31m连接失败：${msg}\x1b[0m`);
-      }
+      await openSession(term);
     };
 
     void boot();
@@ -421,7 +447,27 @@ export function TerminalPane({ tab, active }: Props) {
             <Loader2 size={12} className="spin" /> 连接中…
           </div>
         )}
-        {tab.status === "closed" && <div className="term-badge">会话已结束</div>}
+        {(tab.status === "closed" || tab.status === "error") && (
+          <div className="reconnect-bar">
+            <span className="rb-text">
+              {tab.status === "error"
+                ? "连接失败"
+                : isSerial
+                  ? "串口已关闭"
+                  : tab.kind === "local"
+                    ? "本地会话已退出"
+                    : "连接已断开"}
+            </span>
+            <button className="btn primary" onClick={() => void reconnect()} disabled={reconnecting}>
+              {reconnecting ? (
+                <Loader2 size={13} className="spin" />
+              ) : (
+                <PlugZap size={13} />
+              )}
+              {reconnecting ? "连接中…" : "重新连接"}
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
