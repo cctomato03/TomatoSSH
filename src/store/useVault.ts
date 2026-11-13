@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { api } from "../lib/api";
-import { applyThemeVars, getTheme, DEFAULT_THEME_ID } from "../lib/themes";
+import { applyThemeVars, applyUiScale, getTheme, DEFAULT_THEME_ID } from "../lib/themes";
 import type {
   AppSettings,
   GroupRecord,
@@ -20,6 +20,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   copyOnSelect: false,
   serialLogDir: "",
   serialLogMode: "raw",
+  uiScale: 1,
   sync: { serverUrl: "", email: "", autoSync: false, lastSyncAt: null },
 };
 
@@ -68,6 +69,7 @@ export const useVault = create<VaultState>((set, get) => ({
         sync: { ...DEFAULT_SETTINGS.sync, ...(snap.settings?.sync ?? {}) },
       };
       applyThemeVars(getTheme(settings.theme));
+      applyUiScale(settings.uiScale ?? 1);
       set({
         hosts: snap.hosts,
         groups: snap.groups,
@@ -122,6 +124,7 @@ export const useVault = create<VaultState>((set, get) => ({
     const next: AppSettings = { ...get().settings, ...patch };
     set({ settings: next });
     if (patch.theme) applyThemeVars(getTheme(next.theme));
+    if (patch.uiScale != null) applyUiScale(next.uiScale);
     window.clearTimeout(persistTimer);
     persistTimer = window.setTimeout(() => {
       api.settingsSave(next).catch((e) => console.error("保存设置失败", e));

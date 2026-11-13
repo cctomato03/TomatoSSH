@@ -94,6 +94,37 @@ export function SettingsDialog() {
       </div>
 
       <div className="field">
+        <label>界面缩放（只影响界面文字，不影响终端字体）</label>
+        <div className="range-row">
+          <input
+            type="range"
+            min={0.85}
+            max={1.4}
+            step={0.05}
+            value={settings.uiScale ?? 1}
+            onChange={(e) => update({ uiScale: Number(e.target.value) })}
+          />
+          <span className="range-val">{Math.round((settings.uiScale ?? 1) * 100)}%</span>
+        </div>
+        <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
+          {[
+            { label: "紧凑", value: 0.9 },
+            { label: "标准", value: 1 },
+            { label: "较大", value: 1.15 },
+            { label: "特大", value: 1.3 },
+          ].map((p) => (
+            <button
+              key={p.value}
+              className={`btn${Math.abs((settings.uiScale ?? 1) - p.value) < 0.001 ? " primary" : ""}`}
+              onClick={() => update({ uiScale: p.value })}
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="field">
         <label>字号</label>
         <div className="range-row">
           <input

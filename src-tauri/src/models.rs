@@ -264,6 +264,8 @@ pub struct Settings {
     pub serial_log_dir: String,
     /// 串口日志格式：raw | timestamped
     pub serial_log_mode: String,
+    /// 界面缩放（1 = 100%，只影响界面文字，不影响终端字体）
+    pub ui_scale: f64,
     pub sync: SyncSettings,
 }
 
@@ -279,6 +281,7 @@ impl Default for Settings {
             copy_on_select: false,
             serial_log_dir: String::new(),
             serial_log_mode: "raw".into(),
+            ui_scale: 1.0,
             sync: SyncSettings::default(),
         }
     }

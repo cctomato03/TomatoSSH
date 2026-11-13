@@ -90,6 +90,8 @@ export interface AppSettings {
   serialLogDir: string;
   /** 串口日志格式：raw | timestamped */
   serialLogMode: string;
+  /** 界面缩放（1 = 100%），只影响界面文字 */
+  uiScale: number;
   sync: SyncConfig;
 }
 

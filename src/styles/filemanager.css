@@ -13,7 +13,7 @@ body,
   height: 100%;
   background: var(--bg);
   color: var(--text);
-  font-size: 15px;
+  font-size: var(--fs-md);
 }
 
 .fm-top {
@@ -31,7 +31,7 @@ body,
 }
 .fm-sub {
   color: var(--text-muted);
-  font-size: 13px;
+  font-size: var(--fs-xs);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -39,7 +39,7 @@ body,
 }
 .fm-busy {
   color: var(--accent);
-  font-size: 13px;
+  font-size: var(--fs-xs);
   white-space: nowrap;
 }
 .fm-toast {
@@ -51,7 +51,7 @@ body,
   border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
   border-radius: 12px;
   padding: 3px 10px;
-  font-size: 13px;
+  font-size: var(--fs-xs);
   max-width: 46%;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -84,7 +84,7 @@ body,
   flex: 1;
   min-width: 0;
   padding: 4px 6px;
-  font-size: 14px;
+  font-size: var(--fs-sm);
 }
 .fm-head-actions {
   display: flex;
@@ -113,14 +113,14 @@ body,
   flex: 1;
   min-width: 0;
   padding: 3px 7px;
-  font-size: 13px;
+  font-size: var(--fs-xs);
   font-family: ui-monospace, "JetBrains Mono", Consolas, monospace;
 }
 .fm-host-tag {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  font-size: 12px;
+  font-size: var(--fs-2xs);
   color: var(--text-muted);
   white-space: nowrap;
   max-width: 45%;
@@ -131,7 +131,7 @@ body,
 .fm-error {
   margin: 0 8px 4px;
   padding: 5px 8px;
-  font-size: 13px;
+  font-size: var(--fs-xs);
   border-radius: 5px;
   background: color-mix(in srgb, var(--danger) 16%, transparent);
   border: 1px solid color-mix(in srgb, var(--danger) 40%, transparent);
@@ -161,7 +161,7 @@ body,
   background: color-mix(in srgb, var(--accent) 24%, transparent);
 }
 .fm-icon {
-  font-size: 14px;
+  font-size: var(--fs-sm);
 }
 .fm-name {
   overflow: hidden;
@@ -170,13 +170,13 @@ body,
 }
 .fm-size {
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: var(--fs-2xs);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 .fm-time {
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: var(--fs-2xs);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
   min-width: 84px;
@@ -203,7 +203,7 @@ body,
 }
 .fm-empty {
   color: var(--text-muted);
-  font-size: 13px;
+  font-size: var(--fs-xs);
   text-align: center;
   padding: 14px 8px;
 }
@@ -215,7 +215,7 @@ body,
   padding: 4px 10px;
   border-top: 1px solid var(--border);
   color: var(--text-muted);
-  font-size: 13px;
+  font-size: var(--fs-xs);
 }
 .fm-pane-foot span {
   display: inline-flex;
@@ -254,7 +254,7 @@ body,
   cursor: not-allowed;
 }
 .fm-arrow-label {
-  font-size: 12px;
+  font-size: var(--fs-2xs);
   color: var(--text-muted);
 }
 
@@ -267,7 +267,7 @@ body,
 }
 .fm-note {
   color: var(--text-muted);
-  font-size: 13px;
+  font-size: var(--fs-xs);
 }
 .fm-transfers {
   display: flex;
@@ -279,7 +279,7 @@ body,
   grid-template-columns: minmax(120px, 1fr) 120px minmax(120px, auto) auto;
   align-items: center;
   gap: 8px;
-  font-size: 13px;
+  font-size: var(--fs-xs);
 }
 .fm-t-name {
   overflow: hidden;
@@ -315,7 +315,7 @@ body,
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  font-size: 13px;
+  font-size: var(--fs-xs);
   color: var(--text-muted);
   margin-bottom: 6px;
 }
@@ -323,7 +323,7 @@ body,
   opacity: 0.75;
 }
 .fm-mini {
-  font-size: 12px;
+  font-size: var(--fs-2xs);
   color: var(--text-muted);
   border: 1px solid var(--border);
   border-radius: 5px;

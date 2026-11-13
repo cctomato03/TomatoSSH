@@ -395,3 +395,9 @@ export function applyThemeVars(theme: AppTheme) {
   root.dataset.appearance = theme.dark ? "dark" : "light";
   root.style.colorScheme = theme.dark ? "dark" : "light";
 }
+
+/** 应用界面缩放（只改 --ui-scale，终端字号仍由设置里的终端字号控制） */
+export function applyUiScale(scale: number) {
+  const safe = Number.isFinite(scale) ? Math.min(1.6, Math.max(0.8, scale)) : 1;
+  document.documentElement.style.setProperty("--ui-scale", String(safe));
+}
