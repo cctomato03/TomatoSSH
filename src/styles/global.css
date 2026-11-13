@@ -12,7 +12,7 @@
   --warning: #ffbd2e;
   --success: #3ecf8e;
   --radius: 8px;
-  --sidebar-w: 268px;
+  --sidebar-w: 280px;
 }
 
 * {
@@ -30,7 +30,7 @@ body {
   background: var(--bg);
   color: var(--text);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", Roboto, sans-serif;
-  font-size: 13px;
+  font-size: 15px;
   overflow: hidden;
   -webkit-font-smoothing: antialiased;
 }
@@ -112,19 +112,19 @@ textarea:focus {
   gap: 8px;
   padding: 12px 12px 8px;
   font-weight: 600;
-  font-size: 14px;
+  font-size: 16px;
   letter-spacing: 0.2px;
 }
 
 .brand-logo {
   width: 22px;
-  height: 22px;
+  height: 24px;
   border-radius: 6px;
   background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 55%, #ffb703));
   display: grid;
   place-items: center;
   color: #fff;
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 700;
 }
 
@@ -136,7 +136,7 @@ textarea:focus {
 
 .icon-btn {
   width: 26px;
-  height: 26px;
+  height: 28px;
   display: grid;
   place-items: center;
   border-radius: 6px;
@@ -198,7 +198,7 @@ textarea:focus {
 
 .tree-sub {
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: 13px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -316,7 +316,7 @@ textarea:focus {
   border-radius: 7px 7px 0 0;
   background: transparent;
   color: var(--text-muted);
-  max-width: 200px;
+  max-width: 232px;
   border: 1px solid transparent;
   border-bottom: none;
   position: relative;
@@ -332,8 +332,8 @@ textarea:focus {
   white-space: nowrap;
 }
 .tab-close {
-  width: 16px;
-  height: 16px;
+  width: 18px;
+  height: 18px;
   border-radius: 4px;
   display: grid;
   place-items: center;
@@ -351,7 +351,7 @@ textarea:focus {
   align-self: center;
   margin: 0 2px;
   width: 26px;
-  height: 26px;
+  height: 28px;
   border-radius: 6px;
   display: grid;
   place-items: center;
@@ -415,7 +415,7 @@ textarea:focus {
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 11px;
+  font-size: 13px;
 }
 
 .term-notice {
@@ -437,7 +437,7 @@ textarea:focus {
 }
 .term-notice button {
   color: var(--accent);
-  font-size: 12px;
+  font-size: 14px;
 }
 
 .empty-state {
@@ -452,7 +452,7 @@ textarea:focus {
   padding: 20px;
 }
 .empty-state h2 {
-  font-size: 16px;
+  font-size: 18px;
   font-weight: 600;
   color: var(--text);
   margin: 0;
@@ -468,7 +468,7 @@ kbd {
   border-radius: 4px;
   padding: 0 5px;
   font-family: inherit;
-  font-size: 11px;
+  font-size: 13px;
 }
 
 /* ---------------- 文件面板 ---------------- */
@@ -489,7 +489,7 @@ kbd {
   gap: 8px;
   padding: 7px 8px;
   border-bottom: 1px solid var(--border);
-  font-size: 12px;
+  font-size: 14px;
   color: var(--text-muted);
 }
 .fp-host {
@@ -520,7 +520,7 @@ kbd {
   color: var(--text);
   border-bottom: 1px solid color-mix(in srgb, var(--danger) 40%, transparent);
   padding: 6px 8px;
-  font-size: 11px;
+  font-size: 13px;
   cursor: pointer;
 }
 
@@ -549,7 +549,7 @@ kbd {
   display: flex;
   align-items: center;
   gap: 4px;
-  font-size: 11px;
+  font-size: 13px;
   color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 0.4px;
@@ -561,7 +561,7 @@ kbd {
 }
 .fp-head-actions button {
   width: 22px;
-  height: 22px;
+  height: 24px;
   border-radius: 5px;
   display: grid;
   place-items: center;
@@ -578,7 +578,7 @@ kbd {
 .fp-path input {
   width: 100%;
   padding: 3px 6px;
-  font-size: 11px;
+  font-size: 13px;
   font-family: ui-monospace, "JetBrains Mono", monospace;
 }
 
@@ -595,7 +595,7 @@ kbd {
   gap: 6px;
   padding: 3px 8px;
   cursor: default;
-  font-size: 12px;
+  font-size: 14px;
   border-radius: 4px;
 }
 .fp-row:hover {
@@ -605,7 +605,7 @@ kbd {
   background: color-mix(in srgb, var(--accent) 22%, transparent);
 }
 .fp-icon {
-  font-size: 12px;
+  font-size: 14px;
   filter: saturate(0.9);
 }
 .fp-name {
@@ -616,7 +616,7 @@ kbd {
 .fp-size,
 .fp-time {
   color: var(--text-muted);
-  font-size: 10px;
+  font-size: 12px;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
@@ -633,7 +633,7 @@ kbd {
 }
 .fp-row-actions button {
   width: 18px;
-  height: 18px;
+  height: 20px;
   border-radius: 4px;
   display: grid;
   place-items: center;
@@ -645,7 +645,7 @@ kbd {
 }
 .fp-empty {
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: 13px;
   padding: 10px;
   text-align: center;
 }
@@ -661,7 +661,7 @@ kbd {
 }
 .fp-arrows button {
   width: 28px;
-  height: 28px;
+  height: 30px;
   border-radius: 6px;
   background: var(--surface);
   color: var(--text);
@@ -679,13 +679,13 @@ kbd {
   gap: 6px;
   padding: 6px 8px;
   border-top: 1px solid var(--border);
-  font-size: 11px;
+  font-size: 13px;
   color: var(--text-muted);
   flex-wrap: wrap;
 }
 .fp-peer select {
   padding: 3px 6px;
-  font-size: 11px;
+  font-size: 13px;
   max-width: 140px;
 }
 .fp-peer button {
@@ -694,7 +694,7 @@ kbd {
   color: var(--accent-text);
   border-radius: 5px;
   padding: 4px 10px;
-  font-size: 11px;
+  font-size: 13px;
 }
 .fp-peer button:disabled {
   opacity: 0.4;
@@ -708,7 +708,7 @@ kbd {
   padding: 4px 10px;
   border-top: 1px solid var(--border);
   background: var(--panel);
-  font-size: 11px;
+  font-size: 13px;
   color: var(--text-muted);
   min-height: 30px;
   overflow-x: auto;
@@ -749,7 +749,7 @@ kbd {
   border: 1px solid var(--border);
   border-radius: 12px;
   box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
-  width: 480px;
+  width: 520px;
   max-width: calc(100vw - 40px);
   max-height: calc(100vh - 60px);
   display: flex;
@@ -757,7 +757,7 @@ kbd {
   overflow: hidden;
 }
 .modal.wide {
-  width: 620px;
+  width: 700px;
 }
 
 .modal-head {
@@ -769,7 +769,7 @@ kbd {
 }
 .modal-head h3 {
   margin: 0;
-  font-size: 13px;
+  font-size: 15px;
 }
 .modal-body {
   padding: 14px;
@@ -792,7 +792,7 @@ kbd {
   gap: 5px;
 }
 .field > label {
-  font-size: 11px;
+  font-size: 13px;
   color: var(--text-muted);
 }
 .field-row {
@@ -819,7 +819,7 @@ kbd {
   padding: 5px 8px;
   border-radius: 5px;
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: 14px;
 }
 .seg button.on {
   background: var(--accent);
@@ -828,7 +828,7 @@ kbd {
 }
 
 .hint {
-  font-size: 11px;
+  font-size: 13px;
   color: var(--text-muted);
   line-height: 1.5;
 }
@@ -867,7 +867,7 @@ kbd {
   display: block;
 }
 .theme-name {
-  font-size: 12px;
+  font-size: 14px;
   color: var(--text);
 }
 
@@ -947,7 +947,7 @@ kbd {
   width: 100%;
   padding: 6px 9px;
   border-radius: 5px;
-  font-size: 12px;
+  font-size: 14px;
   color: var(--text);
   text-align: left;
 }
@@ -963,7 +963,7 @@ kbd {
   margin: 4px 2px;
 }
 .ctx-label {
-  font-size: 10px;
+  font-size: 12px;
   color: var(--text-muted);
   padding: 4px 9px 2px;
   text-transform: uppercase;
@@ -981,7 +981,7 @@ kbd {
   width: 100%;
   text-align: left;
   padding: 6px 10px;
-  font-size: 12px;
+  font-size: 14px;
 }
 .group-list > button:hover {
   background: var(--input);
@@ -1033,7 +1033,7 @@ kbd {
   padding: 4px 6px 6px;
   margin-bottom: 4px;
   border-bottom: 1px solid var(--border);
-  font-size: 11px;
+  font-size: 13px;
   color: var(--text-muted);
 }
 .serial-toolbar .st-group {
@@ -1050,7 +1050,7 @@ kbd {
   border: 1px solid var(--border);
   background: var(--surface);
   color: var(--text);
-  font-size: 11px;
+  font-size: 13px;
 }
 .serial-toolbar button:hover {
   border-color: var(--accent);
@@ -1077,17 +1077,17 @@ kbd {
 .st-send > input {
   width: 220px;
   padding: 3px 7px;
-  font-size: 11px;
+  font-size: 13px;
 }
 .st-send select {
   padding: 2px 4px;
-  font-size: 11px;
+  font-size: 13px;
 }
 .st-hexcheck {
   display: inline-flex;
   align-items: center;
   gap: 3px;
-  font-size: 11px;
+  font-size: 13px;
   color: var(--text-muted);
   white-space: nowrap;
 }
@@ -1117,7 +1117,7 @@ kbd {
   gap: 10px;
   padding: 4px 8px;
   border-bottom: 1px solid var(--border);
-  font-size: 11px;
+  font-size: 13px;
   color: var(--text-muted);
 }
 .hexview-auto {
@@ -1135,7 +1135,7 @@ kbd {
   align-items: center;
   gap: 4px;
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: 13px;
 }
 .hexview-clear:hover {
   color: var(--text);
@@ -1145,7 +1145,7 @@ kbd {
   overflow: auto;
   padding: 6px 8px;
   font-family: ui-monospace, "JetBrains Mono", Consolas, monospace;
-  font-size: 12px;
+  font-size: 14px;
   line-height: 1.5;
 }
 .hexview-row {
@@ -1172,7 +1172,7 @@ kbd {
 }
 .hexview-empty {
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: 13px;
 }
 .term-hex {
   /* HEX 视图：作为 term-wrap 的 flex 子项，与工具栏共享高度，不越出窗口 */
@@ -1188,9 +1188,9 @@ kbd {
   padding: 4px 6px;
   margin-bottom: 4px;
   border-bottom: 1px solid var(--border);
-  font-size: 11px;
+  font-size: 13px;
   color: var(--text-muted);
-  min-height: 28px;
+  min-height: 30px;
 }
 .sb-label {
   display: inline-flex;
@@ -1213,7 +1213,7 @@ kbd {
   border: 1px solid var(--border);
   background: var(--surface);
   color: var(--text);
-  font-size: 11px;
+  font-size: 13px;
   white-space: nowrap;
   max-width: 220px;
   overflow: hidden;
@@ -1232,7 +1232,7 @@ kbd {
 }
 .sb-actions button {
   width: 22px;
-  height: 22px;
+  height: 24px;
   border-radius: 5px;
   display: grid;
   place-items: center;
@@ -1245,7 +1245,7 @@ kbd {
 /* 快捷指令：分组下拉 + 搜索 + 分组前缀 */
 .sb-group {
   padding: 2px 4px;
-  font-size: 11px;
+  font-size: 13px;
   max-width: 130px;
 }
 .sb-search {
@@ -1262,7 +1262,7 @@ kbd {
   border: none;
   background: transparent;
   padding: 1px 2px;
-  font-size: 11px;
+  font-size: 13px;
   width: 150px;
   color: var(--text);
   outline: none;
@@ -1279,7 +1279,7 @@ kbd {
   border-radius: 4px;
   background: color-mix(in srgb, var(--accent) 22%, transparent);
   color: var(--text-muted);
-  font-size: 10px;
+  font-size: 12px;
 }
 .sb-actions button.on {
   background: var(--surface);
@@ -1308,7 +1308,7 @@ kbd {
   top: 50%;
   transform: translateY(-50%);
   width: 24px;
-  height: 24px;
+  height: 26px;
   border-radius: 5px;
   display: grid;
   place-items: center;
@@ -1342,11 +1342,11 @@ kbd {
   z-index: 6;
 }
 .rb-text {
-  font-size: 12px;
+  font-size: 14px;
   color: var(--text-muted);
   white-space: nowrap;
 }
 .reconnect-bar .btn {
   padding: 3px 10px;
-  font-size: 12px;
+  font-size: 14px;
 }

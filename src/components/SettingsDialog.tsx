@@ -47,7 +47,7 @@ export function SettingsDialog() {
             className="btn ghost"
             onClick={() => update({ ...DEFAULT_SETTINGS, sync: settings.sync })}
           >
-            <RotateCcw size={13} /> 恢复默认外观
+            <RotateCcw size={14} /> 恢复默认外观
           </button>
           <button className="btn primary" onClick={close}>
             完成
@@ -57,7 +57,7 @@ export function SettingsDialog() {
     >
       <div className="field">
         <label>
-          <Palette size={11} /> 主题（{THEMES.length} 套内置配色）
+          <Palette size={12} /> 主题（{THEMES.length} 套内置配色）
         </label>
         <div className="theme-grid">
           {THEMES.map((t) => (
@@ -82,7 +82,7 @@ export function SettingsDialog() {
 
       <div className="field">
         <label>
-          <Type size={11} /> 字体
+          <Type size={12} /> 字体
         </label>
         <select value={settings.fontFamily} onChange={(e) => update({ fontFamily: e.target.value })}>
           {FONT_PRESETS.map((f) => (

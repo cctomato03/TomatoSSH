@@ -55,7 +55,7 @@ export function SnippetBar({ sessionId, onNotice }: Props) {
   return (
     <div className="snippet-bar">
       <span className="sb-label">
-        <Zap size={12} /> 快捷指令
+        <Zap size={13} /> 快捷指令
       </span>
 
       {groups.length > 0 && (
@@ -76,7 +76,7 @@ export function SnippetBar({ sessionId, onNotice }: Props) {
 
       {searching ? (
         <span className="sb-search">
-          <Search size={12} />
+          <Search size={13} />
           <input
             autoFocus
             value={query}
@@ -96,7 +96,7 @@ export function SnippetBar({ sessionId, onNotice }: Props) {
               setQuery("");
             }}
           >
-            <X size={12} />
+            <X size={13} />
           </button>
         </span>
       ) : null}
@@ -131,13 +131,13 @@ export function SnippetBar({ sessionId, onNotice }: Props) {
           onClick={() => setSearching((v) => !v)}
           className={searching ? "on" : undefined}
         >
-          <Search size={13} />
+          <Search size={14} />
         </button>
         <button
           title="管理快捷指令（新建 / 编辑 / 删除 / 分组）"
           onClick={() => setDialog({ open: true, snippet: null })}
         >
-          <Settings2 size={13} />
+          <Settings2 size={14} />
         </button>
       </div>
 

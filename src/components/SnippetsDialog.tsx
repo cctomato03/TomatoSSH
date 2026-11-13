@@ -142,17 +142,17 @@ export function SnippetsDialog({ snippet, onClose }: Props) {
             </button>
           )}
           <button className="btn primary" onClick={submit} disabled={saving}>
-            <Plus size={13} /> {editing.id ? "保存修改" : "添加指令"}
+            <Plus size={14} /> {editing.id ? "保存修改" : "添加指令"}
           </button>
         </div>
       </div>
 
       <div className="field">
         <label>
-          <Zap size={11} /> 已有指令（{snippets.length}）
+          <Zap size={12} /> 已有指令（{snippets.length}）
         </label>
         <div className="sb-search" style={{ marginBottom: 6 }}>
-          <Search size={12} />
+          <Search size={13} />
           <input
             placeholder="搜索名称 / 内容 / 分组"
             value={query}
@@ -180,7 +180,7 @@ export function SnippetsDialog({ snippet, onClose }: Props) {
                     </span>
                   </span>
                   <button className="icon-btn" title="编辑" onClick={() => setEditing(s)}>
-                    <Pencil size={13} />
+                    <Pencil size={14} />
                   </button>
                   <button
                     className="icon-btn"
@@ -192,7 +192,7 @@ export function SnippetsDialog({ snippet, onClose }: Props) {
                       }
                     }}
                   >
-                    <Trash2 size={13} />
+                    <Trash2 size={14} />
                   </button>
                 </div>
               ))}

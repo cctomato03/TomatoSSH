@@ -132,7 +132,7 @@ export function SerialDialog({ profile, onClose }: Props) {
         </div>
         <div className="field">
           <label>
-            <Cable size={11} /> 串口设备
+            <Cable size={12} /> 串口设备
           </label>
           <div style={{ display: "flex", gap: 6 }}>
             <select
@@ -154,7 +154,7 @@ export function SerialDialog({ profile, onClose }: Props) {
               <option value="__manual__">手动输入…</option>
             </select>
             <button className="btn" onClick={refreshPorts} disabled={loadingPorts} title="刷新串口列表">
-              <RefreshCw size={13} className={loadingPorts ? "spin" : undefined} />
+              <RefreshCw size={14} className={loadingPorts ? "spin" : undefined} />
             </button>
           </div>
         </div>

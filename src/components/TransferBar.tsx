@@ -15,11 +15,11 @@ export function TransferBar() {
         const pct = t.total > 0 ? Math.min(100, Math.round((t.done / t.total) * 100)) : 0;
         const icon =
           t.direction === "upload" ? (
-            <ArrowUpFromLine size={12} />
+            <ArrowUpFromLine size={13} />
           ) : t.direction === "download" ? (
-            <ArrowDownToLine size={12} />
+            <ArrowDownToLine size={13} />
           ) : (
-            <ArrowLeftRight size={12} />
+            <ArrowLeftRight size={13} />
           );
         return (
           <span className="transfer-item" key={t.id}>
@@ -35,7 +35,7 @@ export function TransferBar() {
             </span>
             {t.status !== "running" && (
               <button className="icon-btn" title="移除" onClick={() => remove(t.id)}>
-                <XCircle size={12} />
+                <XCircle size={13} />
               </button>
             )}
           </span>

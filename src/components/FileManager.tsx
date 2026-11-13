@@ -99,13 +99,13 @@ function PaneView(p: PaneViewProps) {
         </select>
         <div className="fm-head-actions">
           <button title="上一级" onClick={() => p.onNavigate(parentPath(p.pane.path))}>
-            <ArrowUp size={14} />
+            <ArrowUp size={15} />
           </button>
           <button title="刷新" onClick={p.onRefresh}>
-            <RefreshCw size={13} className={p.pane.loading ? "spin" : undefined} />
+            <RefreshCw size={14} className={p.pane.loading ? "spin" : undefined} />
           </button>
           <button title="新建文件夹" onClick={p.onMkdir}>
-            <FolderPlus size={14} />
+            <FolderPlus size={15} />
           </button>
         </div>
       </header>
@@ -122,7 +122,7 @@ function PaneView(p: PaneViewProps) {
         />
         {selectedHost && (
           <span className="fm-host-tag">
-            <Server size={11} /> {selectedHost.username}@{selectedHost.host}
+            <Server size={12} /> {selectedHost.username}@{selectedHost.host}
           </span>
         )}
       </div>
@@ -154,7 +154,7 @@ function PaneView(p: PaneViewProps) {
                   p.onRename(f);
                 }}
               >
-                <Pencil size={12} />
+                <Pencil size={13} />
               </button>
               <button
                 title="删除"
@@ -163,7 +163,7 @@ function PaneView(p: PaneViewProps) {
                   p.onDelete(f);
                 }}
               >
-                <Trash2 size={12} />
+                <Trash2 size={13} />
               </button>
             </span>
           </div>
@@ -172,7 +172,7 @@ function PaneView(p: PaneViewProps) {
 
       <footer className="fm-pane-foot">
         <span>
-          {p.pane.kind === "local" ? <Laptop size={12} /> : <Server size={12} />}
+          {p.pane.kind === "local" ? <Laptop size={13} /> : <Server size={13} />}
           {p.pane.entries.length} 项
           {p.pane.selected.size > 0 ? ` · 已选 ${p.pane.selected.size}` : ""}
         </span>
@@ -232,12 +232,12 @@ function QueuePanel({
               <span className="fm-t-actions">
                 {(j.status === "running" || j.status === "pending") && (
                   <button title="取消" onClick={() => onCancel(j.id)}>
-                    <XCircle size={12} />
+                    <XCircle size={13} />
                   </button>
                 )}
                 {(j.status === "error" || j.status === "canceled") && (
                   <button title="重试（断点续传）" onClick={() => onRetry(j.id)}>
-                    <RotateCcw size={12} />
+                    <RotateCcw size={13} />
                   </button>
                 )}
               </span>
@@ -518,7 +518,7 @@ export function FileManager() {
         </span>
         {toast && (
           <button className="fm-toast" onClick={() => setToast(null)}>
-            {toast} <X size={12} />
+            {toast} <X size={13} />
           </button>
         )}
       </header>

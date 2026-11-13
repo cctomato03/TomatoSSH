@@ -155,14 +155,14 @@ export function ForwardsDialog({ hostId, onClose }: Props) {
         </div>
         <div style={{ display: "flex", justifyContent: "flex-end" }}>
           <button className="btn" onClick={addRule}>
-            <Plus size={13} /> 添加规则
+            <Plus size={14} /> 添加规则
           </button>
         </div>
       </div>
 
       <div className="field">
         <label>
-          <Waypoints size={11} /> 已保存规则（{rules.length}）
+          <Waypoints size={12} /> 已保存规则（{rules.length}）
         </label>
         <div className="group-list" style={{ maxHeight: 180 }}>
           {rules.length === 0 && (
@@ -173,7 +173,7 @@ export function ForwardsDialog({ hostId, onClose }: Props) {
               (a) => a.destHost === r.destHost && a.destPort === r.destPort,
             );
             return (
-              <div key={r.id} className="rule-item" style={{ fontSize: 12 }}>
+              <div key={r.id} className="rule-item" style={{ fontSize: 14 }}>
                 <span className="snippet-main">
                   <b>
                     127.0.0.1:{running ? running.bindPort : r.bindPort || "随机"} →{" "}
@@ -196,7 +196,7 @@ export function ForwardsDialog({ hostId, onClose }: Props) {
                       await refresh();
                     }}
                   >
-                    <Square size={13} />
+                    <Square size={14} />
                   </button>
                 ) : (
                   <button
@@ -205,7 +205,7 @@ export function ForwardsDialog({ hostId, onClose }: Props) {
                     disabled={busy === r.id}
                     onClick={() => void startRule(r)}
                   >
-                    <Play size={13} />
+                    <Play size={14} />
                   </button>
                 )}
                 <button
@@ -217,7 +217,7 @@ export function ForwardsDialog({ hostId, onClose }: Props) {
                     await refresh();
                   }}
                 >
-                  <Trash2 size={13} />
+                  <Trash2 size={14} />
                 </button>
               </div>
             );

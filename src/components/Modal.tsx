@@ -21,7 +21,7 @@ export function Modal({ title, onClose, children, footer, wide }: Props) {
         <div className="modal-head">
           <h3>{title}</h3>
           <button className="icon-btn" style={{ marginLeft: "auto" }} onClick={onClose} title="关闭">
-            <X size={15} />
+            <X size={16} />
           </button>
         </div>
         <div className="modal-body">{children}</div>

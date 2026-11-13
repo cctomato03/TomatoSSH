@@ -118,7 +118,7 @@ export function SerialHexView({ sessionId, subscribe, className }: Props) {
             setVersion((v) => v + 1);
           }}
         >
-          <Eraser size={12} /> 清空
+          <Eraser size={13} /> 清空
         </button>
       </div>
       <div className="hexview-body" ref={scrollerRef}>

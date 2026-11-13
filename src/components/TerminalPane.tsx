@@ -345,7 +345,7 @@ export function TerminalPane({ tab, active }: Props) {
         {isSerial && (
           <div className="serial-toolbar">
             <span className="st-group">
-              <Cable size={13} className="st-icon" />
+              <Cable size={14} className="st-icon" />
               <button
                 className={lines.dtr ? "st-on" : undefined}
                 title="切换 DTR 电平"
@@ -364,7 +364,7 @@ export function TerminalPane({ tab, active }: Props) {
                 CTS {lines.cts ? "●" : "○"} · CD {lines.cd ? "●" : "○"}
               </span>
               <button title="DTR/RTS 复位脉冲（开发板常用）" onClick={() => void doReset()}>
-                <RotateCcw size={12} /> 复位
+                <RotateCcw size={13} /> 复位
               </button>
             </span>
 
@@ -406,7 +406,7 @@ export function TerminalPane({ tab, active }: Props) {
                 HEX
               </label>
               <button className="st-sendbtn" onClick={() => void doSend()} title="发送">
-                <Send size={12} /> 发送
+                <Send size={13} /> 发送
               </button>
               {history.length > 0 && (
                 <select
@@ -444,7 +444,7 @@ export function TerminalPane({ tab, active }: Props) {
         )}
         {tab.status === "connecting" && (
           <div className="term-badge">
-            <Loader2 size={12} className="spin" /> 连接中…
+            <Loader2 size={13} className="spin" /> 连接中…
           </div>
         )}
         {(tab.status === "closed" || tab.status === "error") && (
@@ -460,9 +460,9 @@ export function TerminalPane({ tab, active }: Props) {
             </span>
             <button className="btn primary" onClick={() => void reconnect()} disabled={reconnecting}>
               {reconnecting ? (
-                <Loader2 size={13} className="spin" />
+                <Loader2 size={14} className="spin" />
               ) : (
-                <PlugZap size={13} />
+                <PlugZap size={14} />
               )}
               {reconnecting ? "连接中…" : "重新连接"}
             </button>

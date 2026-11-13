@@ -28,11 +28,11 @@ export function TabBar() {
             title={host ? `${host.username}@${host.host}` : tab.title}
           >
             {tab.kind === "local" ? (
-              <TerminalSquare size={13} />
+              <TerminalSquare size={14} />
             ) : tab.kind === "serial" ? (
-              <Cable size={13} />
+              <Cable size={14} />
             ) : (
-              <FolderTree size={13} />
+              <FolderTree size={14} />
             )}
             <span className="tab-title">{tab.title}</span>
             {tab.status === "connecting" && <span className="dot idle" />}
@@ -46,14 +46,14 @@ export function TabBar() {
                 closeTab(tab.id);
               }}
             >
-              <X size={12} />
+              <X size={13} />
             </button>
           </div>
         );
       })}
 
       <button className="tab-add" title="新建本地终端" onClick={() => openLocalTab()}>
-        <Plus size={15} />
+        <Plus size={16} />
       </button>
 
       <div className="tabbar-spacer" />
@@ -64,7 +64,7 @@ export function TabBar() {
           title="在独立窗口打开文件管理器（可本地 ⇄ 远程、远程 ⇄ 远程互传）"
           onClick={() => api.openFileManager(active.hostId).catch((e) => console.error(e))}
         >
-          <FolderOpen size={15} />
+          <FolderOpen size={16} />
         </button>
       )}
     </div>

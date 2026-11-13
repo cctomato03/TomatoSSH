@@ -129,7 +129,7 @@ export function HostDialog() {
         </div>
         <div className="field">
           <label>
-            <FolderTree size={11} /> 分组
+            <FolderTree size={12} /> 分组
           </label>
           <select
             value={form.groupId ?? ""}
@@ -181,12 +181,12 @@ export function HostDialog() {
             >
               {t === "password" ? (
                 <>
-                  <KeyRound size={12} style={{ verticalAlign: -2, marginRight: 4 }} />
+                  <KeyRound size={13} style={{ verticalAlign: -2, marginRight: 4 }} />
                   密码
                 </>
               ) : (
                 <>
-                  <FileKey size={12} style={{ verticalAlign: -2, marginRight: 4 }} />
+                  <FileKey size={13} style={{ verticalAlign: -2, marginRight: 4 }} />
                   私钥
                 </>
               )}

@@ -46,7 +46,7 @@ export function PasswordInput({
         aria-label={visible ? "隐藏密码" : title}
         onClick={() => setVisible((v) => !v)}
       >
-        {visible ? <EyeOff size={14} /> : <Eye size={14} />}
+        {visible ? <EyeOff size={15} /> : <Eye size={15} />}
       </button>
     </div>
   );

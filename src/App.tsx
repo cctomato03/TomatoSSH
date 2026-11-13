@@ -26,10 +26,10 @@ function EmptyState() {
       <div>左侧选择一个连接双击即可打开终端，或先创建一个新连接</div>
       <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
         <button className="btn primary" onClick={() => openHostDialog(null, null)}>
-          <Plus size={14} /> 新建 SSH 连接
+          <Plus size={15} /> 新建 SSH 连接
         </button>
         <button className="btn" onClick={() => openLocalTab()}>
-          <Terminal size={14} /> 打开本地终端
+          <Terminal size={15} /> 打开本地终端
         </button>
       </div>
       <div className="hint" style={{ marginTop: 10 }}>
@@ -125,7 +125,7 @@ export default function App() {
 
       {error && (
         <div className="term-notice" style={{ left: "50%", bottom: 40, top: "auto" }}>
-          <Server size={14} />
+          <Server size={15} />
           <span style={{ whiteSpace: "pre-wrap" }}>{error}</span>
           <button onClick={() => useVault.setState({ error: null })}>关闭</button>
         </div>

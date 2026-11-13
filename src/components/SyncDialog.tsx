@@ -82,7 +82,7 @@ export function SyncDialog() {
   return (
     <Modal title="云同步" onClose={close} footer={<button className="btn primary" onClick={close}>关闭</button>}>
       <div className="hint">
-        <ShieldCheck size={12} style={{ verticalAlign: -2, marginRight: 4 }} />
+        <ShieldCheck size={13} style={{ verticalAlign: -2, marginRight: 4 }} />
         连接信息（含密码）在本机用 AES-256-GCM 加密后才上传，密钥由账号密码通过 PBKDF2 派生，
         <b>服务端拿不到明文</b>。多台设备使用同一账号同步时会按修改时间自动合并。
       </div>
@@ -104,16 +104,16 @@ export function SyncDialog() {
 
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             <button className="btn primary" disabled={!!busy} onClick={() => doSync("now")}>
-              <RefreshCw size={13} className={busy === "同步中…" ? "spin" : undefined} /> 立即双向同步
+              <RefreshCw size={14} className={busy === "同步中…" ? "spin" : undefined} /> 立即双向同步
             </button>
             <button className="btn" disabled={!!busy} onClick={() => doSync("push")}>
-              <CloudUpload size={13} /> 上传到云端
+              <CloudUpload size={14} /> 上传到云端
             </button>
             <button className="btn" disabled={!!busy} onClick={() => doSync("pull")}>
-              <CloudDownload size={13} /> 从云端拉取
+              <CloudDownload size={14} /> 从云端拉取
             </button>
             <button className="btn danger" disabled={!!busy} onClick={doLogout}>
-              <LogOut size={13} /> 退出登录
+              <LogOut size={14} /> 退出登录
             </button>
           </div>
 
