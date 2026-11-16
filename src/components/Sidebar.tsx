@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Cable,
   ChevronDown,
@@ -56,7 +56,8 @@ export function Sidebar() {
   const setSyncOpen = useUi((s) => s.setSyncOpen);
 
   const [query, setQuery] = useState("");
-  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  // 改为记录「已展开」的分组：默认为空 = 启动时全部分组折叠，由用户点击展开
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [menu, setMenu] = useState<MenuState | null>(null);
   const [serialDialog, setSerialDialog] = useState<{ open: boolean; profile: SerialProfile | null }>(
     { open: false, profile: null },
@@ -69,12 +70,62 @@ export function Sidebar() {
   );
 
   const toggle = (id: string) =>
-    setCollapsed((prev) => {
+    setExpanded((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
       else next.add(id);
       return next;
     });
+
+  /** 展开某个分组及其所有上级（新建连接/分组后自动露出） */
+  const expandChain = useCallback(
+    (groupId: string | null | undefined) => {
+      if (!groupId) return;
+      const chain: string[] = [];
+      let cur = groups.find((g) => g.id === groupId);
+      while (cur) {
+        chain.push(cur.id);
+        const parentId: string | null | undefined = cur.parentId;
+        cur = parentId ? groups.find((g) => g.id === parentId) : undefined;
+      }
+      if (chain.length === 0) return;
+      setExpanded((prev) => {
+        const next = new Set(prev);
+        for (const id of chain) next.add(id);
+        return next;
+      });
+    },
+    [groups],
+  );
+
+  // 首次渲染后记录已有连接/分组，之后新建的项自动展开其所属分组（否则会藏在折叠的分组里）
+  const knownHostsRef = useRef<Set<string> | null>(null);
+  useEffect(() => {
+    if (!knownHostsRef.current) {
+      knownHostsRef.current = new Set(hosts.map((h) => h.id));
+      return;
+    }
+    const known = knownHostsRef.current;
+    for (const h of hosts) {
+      if (known.has(h.id)) continue;
+      known.add(h.id);
+      if (h.groupId) expandChain(h.groupId);
+    }
+  }, [hosts, expandChain]);
+
+  const knownGroupsRef = useRef<Set<string> | null>(null);
+  useEffect(() => {
+    if (!knownGroupsRef.current) {
+      knownGroupsRef.current = new Set(groups.map((g) => g.id));
+      return;
+    }
+    const known = knownGroupsRef.current;
+    for (const g of groups) {
+      if (known.has(g.id)) continue;
+      known.add(g.id);
+      if (g.parentId) expandChain(g.parentId);
+    }
+  }, [groups, expandChain]);
 
   const connect = (host: HostRecord, withFiles = false) => {
     if (withFiles) {
@@ -264,7 +315,7 @@ export function Sidebar() {
   };
 
   const renderGroup = (group: GroupRecord, depth: number) => {
-    const isCollapsed = collapsed.has(group.id);
+    const isCollapsed = !expanded.has(group.id);
     const subGroups = childrenOf(group.id);
     const subHosts = hostsOf(group.id);
     return (

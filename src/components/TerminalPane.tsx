@@ -81,23 +81,33 @@ export function TerminalPane({ tab, active }: Props) {
     });
 
     // Ctrl+Shift+C / Ctrl+Shift+V 复制粘贴
-    term.attachCustomKeyEventHandler((e) => {
-      if (e.type !== "keydown") return true;
+    // ⚠️ 必须在捕获阶段把按键「吃掉」（preventDefault + stopPropagation）：
+    // 以前只让 xterm 忽略该键（attachCustomKeyEventHandler 返回 false），但浏览器
+    // 自己的 Ctrl+Shift+V 粘贴默认行为仍然发生，内容插进 xterm 的隐藏 textarea 后
+    // 又被 xterm 发一次 onData —— 于是手动写入 + 原生粘贴 = 贴了两次。
+    const onKeyDownCapture = (e: KeyboardEvent) => {
       const ctrl = e.ctrlKey || e.metaKey;
-      if (ctrl && e.shiftKey && e.code === "KeyC") {
-        const sel = term.getSelection();
-        if (sel) navigator.clipboard.writeText(sel).catch(() => undefined);
-        return false;
-      }
-      if (ctrl && e.shiftKey && e.code === "KeyV") {
+      if (!ctrl || !e.shiftKey) return;
+      if (e.code === "KeyV") {
+        e.preventDefault();
+        e.stopPropagation();
         navigator.clipboard
           .readText()
-          .then((text) => api.termWrite(tab.id, text))
+          .then((text) => {
+            if (text) api.termWrite(tab.id, text).catch(() => undefined);
+          })
           .catch(() => undefined);
-        return false;
+        return;
       }
-      return true;
-    });
+      if (e.code === "KeyC") {
+        const sel = term.getSelection();
+        if (!sel) return;
+        e.preventDefault();
+        e.stopPropagation();
+        navigator.clipboard.writeText(sel).catch(() => undefined);
+      }
+    };
+    el.addEventListener("keydown", onKeyDownCapture, true);
 
     const ro = new ResizeObserver(() => {
       if (!el.offsetParent) return;
@@ -110,6 +120,7 @@ export function TerminalPane({ tab, active }: Props) {
     ro.observe(el);
 
     return () => {
+      el.removeEventListener("keydown", onKeyDownCapture, true);
       ro.disconnect();
       dataSub.dispose();
       resizeSub.dispose();
