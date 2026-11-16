@@ -80,14 +80,24 @@ export function TerminalPane({ tab, active }: Props) {
       api.termResize(tab.id, cols, rows).catch(() => undefined);
     });
 
-    // Ctrl+Shift+C / Ctrl+Shift+V 复制粘贴
-    // ⚠️ 必须在捕获阶段把按键「吃掉」（preventDefault + stopPropagation）：
-    // 以前只让 xterm 忽略该键（attachCustomKeyEventHandler 返回 false），但浏览器
-    // 自己的 Ctrl+Shift+V 粘贴默认行为仍然发生，内容插进 xterm 的隐藏 textarea 后
-    // 又被 xterm 发一次 onData —— 于是手动写入 + 原生粘贴 = 贴了两次。
+    // 复制 / 粘贴的按键策略（平台不同，避免重复粘贴）
+    //
+    //  · Windows / Linux：粘贴用 Ctrl+Shift+V，复制用 Ctrl+Shift+C
+    //    —— 这里必须在**捕获阶段**把按键吃掉（preventDefault + stopPropagation）。
+    //       以前只是让 xterm 忽略该键（attachCustomKeyEventHandler 返回 false），
+    //       但浏览器自己的 Ctrl+Shift+V 粘贴默认行为仍然发生：内容插进 xterm 的隐藏
+    //       textarea 后又被 xterm 发一次 onData，于是「手动写入 + 原生粘贴」贴了两次。
+    //
+    //  · macOS：粘贴是 Cmd+V、复制是 Cmd+C，xterm / WebView 原生处理就是**单次**，
+    //    所以这里主动**不拦截** Cmd+V / Cmd+C（只在带 Shift 时接管，例如 Cmd+Shift+V）。
+    const isMac = /mac/i.test(navigator.platform || navigator.userAgent);
     const onKeyDownCapture = (e: KeyboardEvent) => {
-      const ctrl = e.ctrlKey || e.metaKey;
-      if (!ctrl || !e.shiftKey) return;
+      const withShift = (e.ctrlKey || e.metaKey) && e.shiftKey;
+      if (!withShift) {
+        // macOS 的 Cmd+V / Cmd+C 交给浏览器原生路径（已是单次粘贴）
+        return;
+      }
+      if (isMac && !e.metaKey) return;
       if (e.code === "KeyV") {
         e.preventDefault();
         e.stopPropagation();
