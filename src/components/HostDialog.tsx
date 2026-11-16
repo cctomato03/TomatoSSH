@@ -31,6 +31,9 @@ export function HostDialog() {
   const [tagText, setTagText] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  /** 私钥存放方式：vault = 存进保险库（可云同步），path = 本机文件路径 */
+  const [keyMode, setKeyMode] = useState<"vault" | "path">("vault");
+  const [keyInfo, setKeyInfo] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -49,9 +52,13 @@ export function HostDialog() {
         keepaliveSecs: host.keepaliveSecs,
       });
       setTagText(host.tags.join(", "));
+      setKeyMode(host.auth.privateKeyPem ? "vault" : "path");
+      setKeyInfo(null);
     } else {
       setForm(empty(groupId));
       setTagText("");
+      setKeyMode("vault");
+      setKeyInfo(null);
     }
   }, [open, host, groupId]);
 
@@ -69,18 +76,52 @@ export function HostDialog() {
     if (typeof picked === "string") patchAuth({ privateKeyPath: picked });
   };
 
+  /** 导入私钥文件：读取内容存进保险库（跨机器可用的推荐方式） */
+  const importKey = async () => {
+    setError(null);
+    const picked = await openFileDialog({
+      multiple: false,
+      directory: false,
+      title: "选择 SSH 私钥文件（不是 .pub 公钥）",
+    });
+    if (typeof picked !== "string") return;
+    try {
+      const r = await api.importPrivateKey(picked, form.auth.passphrase ?? null);
+      patchAuth({ privateKeyPem: r.content, privateKeyName: r.name, privateKeyPath: null });
+      setKeyMode("vault");
+      setKeyInfo(
+        [r.keyType, r.fingerprint, r.encrypted ? "带口令" : null].filter(Boolean).join(" · "),
+      );
+      if (r.encrypted && !form.auth.passphrase) {
+        setError("该私钥已用口令加密，请在下方「私钥口令」里填写");
+      }
+    } catch (e) {
+      setError(String(e));
+    }
+  };
+
   const submit = async () => {
     setError(null);
     if (!form.host.trim()) return setError("请填写主机地址");
     if (!form.username.trim()) return setError("请填写用户名");
     if (form.auth.type === "password" && !form.auth.password) return setError("请填写登录密码");
-    if (form.auth.type === "privateKey" && !form.auth.privateKeyPath)
-      return setError("请选择私钥文件");
+    if (form.auth.type === "privateKey") {
+      const hasPem = !!(form.auth.privateKeyPem ?? "").trim();
+      const hasPath = !!(form.auth.privateKeyPath ?? "").trim();
+      if (!hasPem && !hasPath) return setError("请导入私钥文件，或填写本机私钥路径");
+    }
 
     setSaving(true);
     try {
       await saveHost({
         ...form,
+        // 只保存当前选择的来源，避免两套路径/内容同时存在造成歧义
+        auth: {
+          ...form.auth,
+          privateKeyPem: keyMode === "vault" ? form.auth.privateKeyPem : null,
+          privateKeyName: keyMode === "vault" ? form.auth.privateKeyName : null,
+          privateKeyPath: keyMode === "path" ? form.auth.privateKeyPath : null,
+        },
         forwards: host?.forwards ?? form.forwards ?? [],
         label: form.label.trim() || `${form.username}@${form.host}`,
         tags: tagText
@@ -208,19 +249,78 @@ export function HostDialog() {
       ) : (
         <>
           <div className="field">
-            <label>私钥文件</label>
-            <div style={{ display: "flex", gap: 6 }}>
-              <input
-                value={form.auth.privateKeyPath ?? ""}
-                onChange={(e) => patchAuth({ privateKeyPath: e.target.value })}
-                placeholder="~/.ssh/id_ed25519"
-                style={{ flex: 1 }}
-              />
-              <button className="btn" onClick={pickKey}>
-                选择…
+            <label>私钥存放方式</label>
+            <div className="seg">
+              <button
+                className={keyMode === "vault" ? "on" : undefined}
+                onClick={() => setKeyMode("vault")}
+                title="私钥内容加密存进本机保险库，并随云同步到其它设备"
+              >
+                存进保险库（推荐 · 可云同步）
+              </button>
+              <button
+                className={keyMode === "path" ? "on" : undefined}
+                onClick={() => setKeyMode("path")}
+                title="只在本机按路径读取，换电脑后需要重新选择"
+              >
+                使用本机文件路径
               </button>
             </div>
           </div>
+
+          {keyMode === "vault" ? (
+            <div className="field">
+              <label>私钥内容（保存在加密保险库，随云同步，换电脑 / 换系统都能直接用）</label>
+              {(form.auth.privateKeyPem ?? "").trim() ? (
+                <div className="key-card">
+                  <span className="key-card-main">
+                    <b>{form.auth.privateKeyName || "已导入的私钥"}</b>
+                    <span className="hint">{keyInfo ?? "已保存在保险库"}</span>
+                  </span>
+                  <button className="btn ghost" onClick={importKey}>
+                    替换…
+                  </button>
+                  <button
+                    className="btn ghost"
+                    onClick={() => {
+                      patchAuth({ privateKeyPem: null, privateKeyName: null });
+                      setKeyInfo(null);
+                    }}
+                  >
+                    移除
+                  </button>
+                </div>
+              ) : (
+                <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+                  <button className="btn primary" onClick={importKey}>
+                    <FileKey size={13} /> 导入私钥文件…
+                  </button>
+                  <span className="hint">
+                    导入的是文件内容（不是路径），会一起加密同步到你的其它设备
+                  </span>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="field">
+              <label>私钥文件路径</label>
+              <div style={{ display: "flex", gap: 6 }}>
+                <input
+                  value={form.auth.privateKeyPath ?? ""}
+                  onChange={(e) => patchAuth({ privateKeyPath: e.target.value })}
+                  placeholder="~/.ssh/id_ed25519"
+                  style={{ flex: 1 }}
+                />
+                <button className="btn" onClick={pickKey}>
+                  选择…
+                </button>
+              </div>
+              <span className="hint">
+                路径只在本机有效，换电脑/换系统后需要重新选择（推荐上面的保险库方式）
+              </span>
+            </div>
+          )}
+
           <div className="field">
             <label>私钥口令（可选）</label>
             <PasswordInput

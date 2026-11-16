@@ -8,6 +8,7 @@ import type {
   GroupRecord,
   HostDraft,
   HostRecord,
+  ImportedKey,
   PortForwardRule,
   SerialLines,
   SerialPortInfo,
@@ -79,6 +80,11 @@ export const api = {
   // ---------- 独立文件管理器窗口 ----------
   openFileManager: (hostId?: string | null) =>
     call<void>("open_file_manager", { hostId: hostId ?? null }),
+
+  // ---------- 私钥 ----------
+  /** 读取私钥文件内容（用于存进保险库、跨机器同步） */
+  importPrivateKey: (path: string, passphrase?: string | null) =>
+    call<ImportedKey>("import_private_key", { path, passphrase: passphrase ?? null }),
 
   // ---------- 快捷指令 ----------
   snippetSave: (draft: Snippet) => call<Snippet>("snippet_save", { draft }),

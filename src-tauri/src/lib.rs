@@ -87,6 +87,7 @@ pub fn run() {
             commands::retry_transfer,
             commands::clear_finished_transfers,
             commands::app_version,
+            commands::import_private_key,
             commands::snippet_save,
             commands::snippet_delete,
             commands::serial_list_ports,

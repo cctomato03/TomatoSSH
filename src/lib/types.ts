@@ -4,8 +4,22 @@ export type AuthType = "password" | "privateKey" | "agent";
 export interface AuthConfig {
   type: AuthType;
   password?: string | null;
+  /** 旧模式：本机私钥文件路径 */
   privateKeyPath?: string | null;
+  /** 推荐模式：私钥内容本身（存加密保险库、随云同步，跨机器可用） */
+  privateKeyPem?: string | null;
+  /** 私钥文件名，仅用于显示 */
+  privateKeyName?: string | null;
   passphrase?: string | null;
+}
+
+/** 导入私钥文件后的信息 */
+export interface ImportedKey {
+  name: string;
+  content: string;
+  keyType: string;
+  fingerprint: string;
+  encrypted: boolean;
 }
 
 /** 端口转发规则（本机监听 → 经 SSH 到目标） */

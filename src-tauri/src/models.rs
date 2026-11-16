@@ -15,7 +15,12 @@ pub struct AuthConfig {
     #[serde(rename = "type")]
     pub kind: String,
     pub password: Option<String>,
+    /// 旧模式：本机私钥文件路径（不同电脑路径可能不同）
     pub private_key_path: Option<String>,
+    /// 推荐模式：私钥内容本身，存进加密保险库并随云同步（跨机器/跨系统可用）
+    pub private_key_pem: Option<String>,
+    /// 私钥文件名，仅用于界面显示（如 id_ed25519）
+    pub private_key_name: Option<String>,
     pub passphrase: Option<String>,
 }
 
@@ -25,6 +30,8 @@ impl Default for AuthConfig {
             kind: AUTH_PASSWORD.into(),
             password: None,
             private_key_path: None,
+            private_key_pem: None,
+            private_key_name: None,
             passphrase: None,
         }
     }

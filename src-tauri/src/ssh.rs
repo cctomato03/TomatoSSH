@@ -119,13 +119,27 @@ async fn authenticate(handle: &mut Handle<ClientHandler>, host: &Host) -> Result
             }
         }
         AUTH_KEY => {
-            let path = host
+            // 优先用保险库里的私钥内容（可云同步、跨机器可用），其次才用本机路径
+            let pem = host
                 .auth
-                .private_key_path
-                .clone()
-                .ok_or_else(|| Error::msg("该连接使用密钥认证，但未选择私钥文件"))?;
-            let key = russh::keys::load_secret_key(&path, host.auth.passphrase.as_deref())
-                .map_err(|e| Error::msg(format!("读取私钥失败（{path}）：{e}")))?;
+                .private_key_pem
+                .as_deref()
+                .map(str::trim)
+                .filter(|s| !s.is_empty());
+            let key = match pem {
+                Some(pem) => {
+                    let label = host.auth.private_key_name.as_deref().unwrap_or("保险库私钥");
+                    russh::keys::decode_secret_key(pem, host.auth.passphrase.as_deref())
+                        .map_err(|e| Error::msg(format!("解析私钥失败（{label}）：{e}")))?
+                }
+                None => {
+                    let path = host.auth.private_key_path.clone().ok_or_else(|| {
+                        Error::msg("该连接使用密钥认证，但没有导入私钥（也没填本机路径）")
+                    })?;
+                    russh::keys::load_secret_key(&path, host.auth.passphrase.as_deref())
+                        .map_err(|e| Error::msg(format!("读取私钥失败（{path}）：{e}")))?
+                }
+            };
             let hash = handle.best_supported_rsa_hash().await.app_err()?.flatten();
             let res = handle
                 .authenticate_publickey(
@@ -147,6 +161,121 @@ async fn authenticate(handle: &mut Handle<ClientHandler>, host: &Host) -> Result
     Ok(())
 }
 
+/// 导入进保险库所需的信息
+#[derive(serde::Serialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportedKey {
+    /// 文件名（仅用于显示）
+    pub name: String,
+    /// 私钥内容本身
+    pub content: String,
+    /// ED25519 / RSA / ...
+    pub key_type: String,
+    /// SHA256:... 指纹
+    pub fingerprint: String,
+    /// 私钥是否带口令加密
+    pub encrypted: bool,
+}
+
+/// 私钥文件大小上限
+pub const MAX_KEY_BYTES: u64 = 512 * 1024;
+
+/// 判断私钥内容本身是否被口令加密
+///   - OpenSSH 新格式：base64 主体解出来后前 15 字节是 "openssh-key-v1\0"，
+///     紧跟 4 字节大端长度 + ciphername；ciphername != "none" 即加密
+///   - 传统 PEM：出现 Proc-Type: 4,ENCRYPTED
+fn key_content_is_encrypted(content: &str) -> bool {
+    if content.contains("Proc-Type: 4,ENCRYPTED") || content.contains("ENCRYPTED-----") {
+        return true;
+    }
+    let body: String = content
+        .lines()
+        .filter(|l| !l.trim_start().starts_with("-----"))
+        .collect::<Vec<_>>()
+        .join("");
+    let Ok(raw) = crate::crypto::b64_decode(body.trim()) else {
+        return false;
+    };
+    const MAGIC: &[u8] = b"openssh-key-v1\0";
+    if raw.len() < MAGIC.len() + 4 || !raw.starts_with(MAGIC) {
+        return false;
+    }
+    let rest = &raw[MAGIC.len()..];
+    let n = u32::from_be_bytes([rest[0], rest[1], rest[2], rest[3]]) as usize;
+    if n == 0 || n > 64 || rest.len() < 4 + n {
+        return false;
+    }
+    let cipher = String::from_utf8_lossy(&rest[4..4 + n]).to_string();
+    cipher != "none"
+}
+/// 读取并校验一个私钥文件，返回可存进保险库的内容
+pub fn import_private_key_file(path: &str, passphrase: Option<&str>) -> Result<ImportedKey> {
+    let meta = std::fs::metadata(path)
+        .map_err(|e| Error::msg(format!("读取私钥文件失败（{path}）：{e}")))?;
+    if meta.len() > MAX_KEY_BYTES {
+        return Err(Error::msg(format!(
+            "私钥文件过大（{} 字节），上限 {} 字节",
+            meta.len(),
+            MAX_KEY_BYTES
+        )));
+    }
+    let content = std::fs::read_to_string(path)
+        .map_err(|e| Error::msg(format!("读取私钥文件失败（{path}）：{e}")))?;
+    if !content.contains("PRIVATE KEY-----") {
+        return Err(Error::msg(
+            "这不是一个私钥文件（缺少 PRIVATE KEY 头，注意别选成 .pub 公钥）",
+        ));
+    }
+    let name = std::path::Path::new(path)
+        .file_name()
+        .map(|s| s.to_string_lossy().to_string())
+        .unwrap_or_else(|| "private-key".to_string());
+    let encrypted_hint = key_content_is_encrypted(&content);
+
+    match russh::keys::decode_secret_key(&content, passphrase) {
+        Ok(key) => {
+            // is_rsa()/is_ed25519() 会消耗 Algorithm，先按引用判断再格式化
+            let alg = key.algorithm();
+            let alg_name = format!("{alg}");
+            let key_type = if alg.clone().is_rsa() {
+                "RSA".to_string()
+            } else if alg.is_ed25519() {
+                "ED25519".to_string()
+            } else {
+                alg_name
+            };
+            let fingerprint = key
+                .fingerprint(russh::keys::HashAlg::Sha256)
+                .to_string();
+            Ok(ImportedKey {
+                name,
+                content,
+                key_type,
+                fingerprint,
+                encrypted: encrypted_hint,
+            })
+        }
+        // 带口令的私钥即便这次没能解开也允许导入，用户填上口令即可使用
+        Err(e) => {
+            let lower = e.to_string().to_ascii_lowercase();
+            let looks_encrypted = encrypted_hint
+                || lower.contains("encrypted")
+                || lower.contains("passphrase")
+                || lower.contains("password");
+            if looks_encrypted {
+                Ok(ImportedKey {
+                    name,
+                    content,
+                    key_type: "加密私钥".to_string(),
+                    fingerprint: String::new(),
+                    encrypted: true,
+                })
+            } else {
+                Err(Error::msg(format!("私钥解析失败：{e}")))
+            }
+        }
+    }
+}
 /// 建立连接并完成认证（`jump` 存在时经跳板机转发）
 pub async fn connect_and_auth_via(host: &Host, jump: Option<&Host>) -> Result<ConnectOutcome> {
     let (mut handle, seen, jump_keep) = match jump {
@@ -438,6 +567,169 @@ mod e2e {
             assert!(
                 text.contains("TOMATO_JUMP_OK"),
                 "命令应经隧道返回，实际：{text}"
+            );
+        });
+    }
+}
+#[cfg(test)]
+mod key_tests {
+    use super::*;
+
+    /// 带口令的 ed25519 私钥（口令：blabla），来自 russh 自带测试数据
+    const ENCRYPTED_ED25519: &str = "-----BEGIN OPENSSH PRIVATE KEY-----
+b3BlbnNzaC1rZXktdjEAAAAACmFlczI1Ni1jYmMAAAAGYmNyeXB0AAAAGAAAABDLGyfA39
+J2FcJygtYqi5ISAAAAEAAAAAEAAAAzAAAAC3NzaC1lZDI1NTE5AAAAIN+Wjn4+4Fcvl2Jl
+KpggT+wCRxpSvtqqpVrQrKN1/A22AAAAkOHDLnYZvYS6H9Q3S3Nk4ri3R2jAZlQlBbUos5
+FkHpYgNw65KCWCTXtP7ye2czMC3zjn2r98pJLobsLYQgRiHIv/CUdAdsqbvMPECB+wl/UQ
+e+JpiSq66Z6GIt0801skPh20jxOO3F52SoX1IeO5D5PXfZrfSZlw6S8c7bwyp2FHxDewRx
+7/wNsnDM0T7nLv/Q==
+-----END OPENSSH PRIVATE KEY-----";
+
+    fn temp_key_file(content: &str, name: &str) -> std::path::PathBuf {
+        let path = std::env::temp_dir().join(format!("tskey-{}-{name}", uuid::Uuid::new_v4()));
+        std::fs::write(&path, content).expect("写入临时私钥");
+        path
+    }
+
+    #[test]
+    fn imports_encrypted_key_with_passphrase() {
+        let path = temp_key_file(ENCRYPTED_ED25519, "id_ed25519");
+        let imported = import_private_key_file(path.to_str().unwrap(), Some("blabla"))
+            .expect("带口令应能导入");
+        assert_eq!(imported.key_type, "ED25519");
+        assert!(imported.encrypted, "应识别为加密私钥");
+        assert!(
+            imported.fingerprint.starts_with("SHA256:"),
+            "指纹：{}",
+            imported.fingerprint
+        );
+        assert!(imported.content.contains("PRIVATE KEY-----"));
+        assert_eq!(imported.name, path.file_name().unwrap().to_string_lossy());
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn imports_encrypted_key_without_passphrase_but_flags_it() {
+        let path = temp_key_file(ENCRYPTED_ED25519, "id_ed25519");
+        let imported = import_private_key_file(path.to_str().unwrap(), None)
+            .expect("加密私钥即使没口令也应允许导入");
+        assert!(imported.encrypted);
+        assert_eq!(imported.key_type, "加密私钥");
+        assert!(imported.fingerprint.is_empty());
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn rejects_public_key_file() {
+        let path = temp_key_file(
+            "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExample user@host",
+            "id_ed25519.pub",
+        );
+        let err = import_private_key_file(path.to_str().unwrap(), None).unwrap_err();
+        assert!(err.to_string().contains("私钥"), "{err}");
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn rejects_missing_file() {
+        let err = import_private_key_file("Z:\\nope\\id_rsa", None).unwrap_err();
+        assert!(err.to_string().contains("读取私钥文件失败"), "{err}");
+    }
+
+    #[test]
+    fn vault_content_is_what_the_auth_path_decodes() {
+        // 认证时优先取 private_key_pem，这里验证该内容能被正常解析（等价于 ssh 登录前的校验）
+        assert!(russh::keys::decode_secret_key(ENCRYPTED_ED25519, Some("blabla")).is_ok());
+        // 口令错误时必须失败
+        assert!(russh::keys::decode_secret_key(ENCRYPTED_ED25519, Some("wrong")).is_err());
+    }
+}
+#[cfg(test)]
+mod key_e2e {
+    use super::*;
+    use crate::models::{AuthConfig, AUTH_KEY};
+
+    /// 无口令的 RSA 私钥（russh 自带测试数据），这里当作「保险库里存的内容」使用
+    const KEY_CONTENT: &str = r#"-----BEGIN OPENSSH PRIVATE KEY-----
+b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAABFwAAAAdzc2gtcn
+NhAAAAAwEAAQAAAQEAuSvQ9m76zhRB4m0BUKPf17lwccj7KQ1Qtse63AOqP/VYItqEH8un
+rxPogXNBgrcCEm/ccLZZsyE3qgp3DRQkkqvJhZ6O8VBPsXxjZesRCqoFNCczy+Mf0R/Qmv
+Rnpu5+4DDLz0p7vrsRZW9ji/c98KzxeUonWgkplQaCBYLN875WdeUYMGtb1MLfNCEj177j
+gZl3CzttLRK3su6dckowXcXYv1gPTPZAwJb49J43o1QhV7+1zdwXvuFM6zuYHdu9ZHSKir
+6k1dXOET3/U+LWG5ofAo8oxUWv/7vs6h7MeajwkUeIBOWYtD+wGYRvVpxvj7nyOoWtg+jm
+0X6ndnsD+QAAA8irV+ZAq1fmQAAAAAdzc2gtcnNhAAABAQC5K9D2bvrOFEHibQFQo9/XuX
+BxyPspDVC2x7rcA6o/9Vgi2oQfy6evE+iBc0GCtwISb9xwtlmzITeqCncNFCSSq8mFno7x
+UE+xfGNl6xEKqgU0JzPL4x/RH9Ca9Gem7n7gMMvPSnu+uxFlb2OL9z3wrPF5SidaCSmVBo
+IFgs3zvlZ15Rgwa1vUwt80ISPXvuOBmXcLO20tErey7p1ySjBdxdi/WA9M9kDAlvj0njej
+VCFXv7XN3Be+4UzrO5gd271kdIqKvqTV1c4RPf9T4tYbmh8CjyjFRa//u+zqHsx5qPCRR4
+gE5Zi0P7AZhG9WnG+PufI6ha2D6ObRfqd2ewP5AAAAAwEAAQAAAQAdELqhI/RsSpO45eFR
+9hcZtnrm8WQzImrr9dfn1w9vMKSf++rHTuFIQvi48Q10ZiOGH1bbvlPAIVOqdjAPtnyzJR
+HhzmyjhjasJlk30zj+kod0kz63HzSMT9EfsYNfmYoCyMYFCKz52EU3xc87Vhi74XmZz0D0
+CgIj6TyZftmzC4YJCiwwU8K+29nxBhcbFRxpgwAksFL6PCSQsPl4y7yvXGcX+7lpZD8547
+v58q3jIkH1g2tBOusIuaiphDDStVJhVdKA55Z0Kju2kvCqsRIlf1efrq43blRgJFFFCxNZ
+8Cpolt4lOHhg+o3ucjILlCOgjDV8dB21YLxmgN5q+xFNAAAAgQC1P+eLUkHDFXnleCEVrW
+xL/DFxEyneLQz3IawGdw7cyAb7vxsYrGUvbVUFkxeiv397pDHLZ5U+t5cOYDBZ7G43Mt2g
+YfWBuRNvYhHA9Sdf38m5qPA6XCvm51f+FxInwd/kwRKH01RHJuRGsl/4Apu4DqVob8y00V
+WTYyV6JBNDkQAAAIEA322lj7ZJXfK/oLhMM/RS+DvaMea1g/q43mdRJFQQso4XRCL6IIVn
+oZXFeOxrMIRByVZBw+FSeB6OayWcZMySpJQBo70GdJOc3pJb3js0T+P2XA9+/jwXS58K9a
++IkgLkv9XkfxNGNKyPEEzXC8QQzvjs1LbmO59VLko8ypwHq/cAAACBANQqaULI0qdwa0vm
+d3Ae1+k3YLZ0kapSQGVIMT2lkrhKV35tj7HIFpUPa4vitHzcUwtjYhqFezVF+JyPbJ/Fsp
+XmEc0g1fFnQp5/SkUwoN2zm8Up52GBelkq2Jk57mOMzWO0QzzNuNV/feJk02b2aE8rrAqP
+QR+u0AypRPmzHnOPAAAAEXJvb3RAMTQwOTExNTQ5NDBkAQ==
+-----END OPENSSH PRIVATE KEY-----"#;
+
+    /// 只用「保险库里的私钥内容」登录，本机不存在任何私钥文件 ——
+    /// 模拟换一台电脑后、路径没了但内容已随云同步过来的场景。
+    ///   TOMATO_TEST_SSH=127.0.0.1:2222（容器里 root 的 authorized_keys 需包含该公钥）
+    #[test]
+    fn authenticates_with_private_key_content() {
+        let Ok(addr) = std::env::var("TOMATO_TEST_SSH") else {
+            eprintln!("跳过私钥内容测试：未设置 TOMATO_TEST_SSH");
+            return;
+        };
+        let port: u16 = addr.rsplit(':').next().unwrap().parse().expect("端口");
+
+        let host = Host {
+            id: "kv".into(),
+            label: "kv".into(),
+            host: "127.0.0.1".into(),
+            port,
+            username: "root".into(),
+            auth: AuthConfig {
+                kind: AUTH_KEY.into(),
+                // 关键：只有内容，路径为空
+                private_key_pem: Some(KEY_CONTENT.to_string()),
+                private_key_path: None,
+                private_key_name: Some("vault-key".into()),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(async move {
+            let outcome = connect_and_auth(&host).await.expect("用保险库私钥内容登录");
+            let mut channel = outcome
+                .handle
+                .channel_open_session()
+                .await
+                .expect("打开会话通道");
+            channel
+                .exec(true, "echo TOMATO_KEY_CONTENT_OK")
+                .await
+                .expect("执行命令");
+            let mut out = Vec::new();
+            while let Some(msg) = channel.wait().await {
+                match msg {
+                    ChannelMsg::Data { data } => out.extend_from_slice(&data),
+                    ChannelMsg::Close | ChannelMsg::Eof => break,
+                    _ => {}
+                }
+            }
+            let text = String::from_utf8_lossy(&out);
+            assert!(
+                text.contains("TOMATO_KEY_CONTENT_OK"),
+                "命令应返回，实际：{text}"
             );
         });
     }

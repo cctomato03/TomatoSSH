@@ -362,6 +362,14 @@ pub fn local_copy(from: String, to: String) -> Result<()> {
     localfs::copy(&from, &to)
 }
 
+// ---------------------------------------------------------------- 私钥导入
+
+/// 读取私钥文件并返回可存入保险库的内容（跨机器可用的推荐做法）
+#[tauri::command]
+pub fn import_private_key(path: String, passphrase: Option<String>) -> Result<crate::ssh::ImportedKey> {
+    crate::ssh::import_private_key_file(&path, passphrase.as_deref())
+}
+
 // ---------------------------------------------------------------- 快捷指令
 
 #[tauri::command]
