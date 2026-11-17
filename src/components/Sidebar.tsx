@@ -7,6 +7,7 @@ import {
   FolderClosed,
   FolderOpen,
   FolderPlus,
+  KeyRound,
   Laptop,
   Pencil,
   Play,
@@ -26,6 +27,7 @@ import { api } from "../lib/api";
 import { useUi } from "../store/useUi";
 import { ContextMenu, type CtxItem } from "./ContextMenu";
 import { ForwardsDialog } from "./ForwardsDialog";
+import { KeysDialog } from "./KeysDialog";
 import { SerialDialog } from "./SerialDialog";
 
 interface MenuState {
@@ -36,6 +38,7 @@ interface MenuState {
 
 export function Sidebar() {
   const hosts = useVault((s) => s.hosts);
+  const vaultLoaded = useVault((s) => s.loaded);
   const serials = useVault((s) => s.serials);
   const deleteSerial = useVault((s) => s.deleteSerial);
   const groups = useVault((s) => s.groups);
@@ -63,6 +66,7 @@ export function Sidebar() {
     { open: false, profile: null },
   );
   const [forwardHostId, setForwardHostId] = useState<string | null>(null);
+  const [keysOpen, setKeysOpen] = useState(false);
 
   const activeHostIds = useMemo(
     () => new Set(tabs.filter((t) => t.kind === "ssh" && t.hostId).map((t) => t.hostId as string)),
@@ -98,34 +102,32 @@ export function Sidebar() {
     [groups],
   );
 
-  // 首次渲染后记录已有连接/分组，之后新建的项自动展开其所属分组（否则会藏在折叠的分组里）
+  // 记录「已见过的」连接/分组，之后新建的项自动展开其所属分组（否则会藏在折叠的分组里）。
+  // ⚠️ 必须以保险库「加载完成」后的第一份数据作为基线：否则首次渲染时数据还是空的，
+  //    加载完成后所有连接都会被当成"新建"，导致启动时把全部分组都展开了。
   const knownHostsRef = useRef<Set<string> | null>(null);
-  useEffect(() => {
-    if (!knownHostsRef.current) {
-      knownHostsRef.current = new Set(hosts.map((h) => h.id));
-      return;
-    }
-    const known = knownHostsRef.current;
-    for (const h of hosts) {
-      if (known.has(h.id)) continue;
-      known.add(h.id);
-      if (h.groupId) expandChain(h.groupId);
-    }
-  }, [hosts, expandChain]);
-
   const knownGroupsRef = useRef<Set<string> | null>(null);
   useEffect(() => {
-    if (!knownGroupsRef.current) {
+    if (!vaultLoaded) return;
+    if (!knownHostsRef.current) {
+      knownHostsRef.current = new Set(hosts.map((h) => h.id));
       knownGroupsRef.current = new Set(groups.map((g) => g.id));
       return;
     }
-    const known = knownGroupsRef.current;
+    const knownHosts = knownHostsRef.current;
+    for (const h of hosts) {
+      if (knownHosts.has(h.id)) continue;
+      knownHosts.add(h.id);
+      if (h.groupId) expandChain(h.groupId);
+    }
+    const knownGroups = knownGroupsRef.current ?? new Set<string>();
     for (const g of groups) {
-      if (known.has(g.id)) continue;
-      known.add(g.id);
+      if (knownGroups.has(g.id)) continue;
+      knownGroups.add(g.id);
       if (g.parentId) expandChain(g.parentId);
     }
-  }, [groups, expandChain]);
+    knownGroupsRef.current = knownGroups;
+  }, [vaultLoaded, hosts, groups, expandChain]);
 
   const connect = (host: HostRecord, withFiles = false) => {
     if (withFiles) {
@@ -489,6 +491,9 @@ export function Sidebar() {
         >
           <Cable size={15} />
         </button>
+        <button className="icon-btn" title="密钥库（管理 SSH 密钥，可云同步）" onClick={() => setKeysOpen(true)}>
+          <KeyRound size={15} />
+        </button>
         <button className="icon-btn" title="打开文件管理器" onClick={() => api.openFileManager().catch((e) => console.error(e))}>
           <FolderOpen size={15} />
         </button>
@@ -498,6 +503,8 @@ export function Sidebar() {
       </div>
 
       {menu && <ContextMenu x={menu.x} y={menu.y} items={menu.items} onClose={() => setMenu(null)} />}
+
+      {keysOpen && <KeysDialog onClose={() => setKeysOpen(false)} />}
 
       {forwardHostId && (
         <ForwardsDialog hostId={forwardHostId} onClose={() => setForwardHostId(null)} />

@@ -17,7 +17,9 @@ pub struct AuthConfig {
     pub password: Option<String>,
     /// 旧模式：本机私钥文件路径（不同电脑路径可能不同）
     pub private_key_path: Option<String>,
-    /// 推荐模式：私钥内容本身，存进加密保险库并随云同步（跨机器/跨系统可用）
+    /// 推荐模式：引用「密钥库」里的一把密钥（id），内容随密钥统一管理/同步
+    pub key_id: Option<String>,
+    /// 兼容模式：直接把私钥内容存在这条连接里
     pub private_key_pem: Option<String>,
     /// 私钥文件名，仅用于界面显示（如 id_ed25519）
     pub private_key_name: Option<String>,
@@ -30,6 +32,7 @@ impl Default for AuthConfig {
             kind: AUTH_PASSWORD.into(),
             password: None,
             private_key_path: None,
+            key_id: None,
             private_key_pem: None,
             private_key_name: None,
             passphrase: None,
@@ -156,6 +159,40 @@ impl Default for PortForwardRule {
             dest_host: "127.0.0.1".into(),
             dest_port: 0,
             auto_start: false,
+        }
+    }
+}
+
+/// 密钥库里的 SSH 密钥（全局资源，可被多条连接引用，随云同步）
+#[derive(Serialize, Deserialize, Clone, Debug)]
+#[serde(rename_all = "camelCase", default)]
+pub struct SshKey {
+    pub id: String,
+    /// 显示名称，例如「生产服务器通用密钥」
+    pub name: String,
+    /// 私钥内容（OpenSSH 或 PEM）
+    pub content: String,
+    /// 私钥口令（可选）
+    pub passphrase: Option<String>,
+    /// ED25519 / RSA / ...
+    pub key_type: String,
+    /// SHA256:... 指纹
+    pub fingerprint: String,
+    pub updated_at: i64,
+    pub deleted: bool,
+}
+
+impl Default for SshKey {
+    fn default() -> Self {
+        Self {
+            id: String::new(),
+            name: String::new(),
+            content: String::new(),
+            passphrase: None,
+            key_type: String::new(),
+            fingerprint: String::new(),
+            updated_at: 0,
+            deleted: false,
         }
     }
 }
@@ -383,6 +420,7 @@ pub struct VaultData {
     pub groups: Vec<Group>,
     pub serials: Vec<SerialProfile>,
     pub snippets: Vec<Snippet>,
+    pub keys: Vec<SshKey>,
     pub settings: Settings,
     pub secrets: DeviceSecrets,
 }
@@ -394,6 +432,7 @@ pub struct Snapshot {
     pub groups: Vec<Group>,
     pub serials: Vec<SerialProfile>,
     pub snippets: Vec<Snippet>,
+    pub keys: Vec<SshKey>,
     pub settings: Settings,
 }
 

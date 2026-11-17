@@ -14,6 +14,7 @@ import type {
   SerialPortInfo,
   SerialProfile,
   Snippet,
+  SshKey,
   SyncResult,
   SyncStateDto,
   TransferJob,
@@ -80,6 +81,10 @@ export const api = {
   // ---------- 独立文件管理器窗口 ----------
   openFileManager: (hostId?: string | null) =>
     call<void>("open_file_manager", { hostId: hostId ?? null }),
+
+  // ---------- 密钥库 ----------
+  keySave: (draft: SshKey) => call<SshKey>("key_save", { draft }),
+  keyDelete: (id: string) => call<void>("key_delete", { id }),
 
   // ---------- 私钥 ----------
   /** 读取私钥文件内容（用于存进保险库、跨机器同步） */

@@ -8,6 +8,7 @@ import type {
   HostRecord,
   SerialProfile,
   Snippet,
+  SshKey,
 } from "../lib/types";
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -32,6 +33,7 @@ interface VaultState {
   groups: GroupRecord[];
   serials: SerialProfile[];
   snippets: Snippet[];
+  keys: SshKey[];
   settings: AppSettings;
   load: () => Promise<void>;
   saveHost: (draft: HostDraft) => Promise<HostRecord>;
@@ -42,6 +44,8 @@ interface VaultState {
   deleteSerial: (id: string) => Promise<void>;
   saveSnippet: (draft: Snippet) => Promise<Snippet>;
   deleteSnippet: (id: string) => Promise<void>;
+  saveKey: (draft: SshKey) => Promise<SshKey>;
+  deleteKey: (id: string) => Promise<void>;
   updateSettings: (patch: Partial<AppSettings>) => void;
   /** 云同步后重新拉取整库 */
   refreshFromServer: () => Promise<void>;
@@ -57,6 +61,7 @@ export const useVault = create<VaultState>((set, get) => ({
   groups: [],
   serials: [],
   snippets: [],
+  keys: [],
   settings: DEFAULT_SETTINGS,
 
   async load() {
@@ -75,6 +80,7 @@ export const useVault = create<VaultState>((set, get) => ({
         groups: snap.groups,
         serials: snap.serials ?? [],
         snippets: snap.snippets ?? [],
+        keys: snap.keys ?? [],
         settings,
         loaded: true,
         loading: false,
@@ -146,6 +152,22 @@ export const useVault = create<VaultState>((set, get) => ({
     set((s) => ({ serials: s.serials.filter((x) => x.id !== id) }));
   },
 
+  async saveKey(draft) {
+    const saved = await api.keySave(draft);
+    set((s) => {
+      const idx = s.keys.findIndex((x) => x.id === saved.id);
+      const keys = idx >= 0 ? s.keys.map((x) => (x.id === saved.id ? saved : x)) : [...s.keys, saved];
+      keys.sort((a, b) => a.name.localeCompare(b.name));
+      return { keys };
+    });
+    return saved;
+  },
+
+  async deleteKey(id) {
+    await api.keyDelete(id);
+    set((s) => ({ keys: s.keys.filter((x) => x.id !== id) }));
+  },
+
   async saveSnippet(draft) {
     const saved = await api.snippetSave(draft);
     set((s) => {
@@ -175,6 +197,7 @@ export const useVault = create<VaultState>((set, get) => ({
       groups: snap.groups,
       serials: snap.serials ?? [],
       snippets: snap.snippets ?? [],
+      keys: snap.keys ?? [],
       settings,
     });
   },

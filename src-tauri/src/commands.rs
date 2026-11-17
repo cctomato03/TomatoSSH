@@ -114,7 +114,9 @@ pub async fn ssh_open(
 ) -> Result<String> {
     let host = {
         let vault = state.vault.lock()?;
-        vault.host(&host_id)?
+        let h = vault.host(&host_id)?;
+        // 把「密钥引用」解析成真实私钥内容（密钥库统一管理）
+        vault.materialize_host(&h)
     };
 
     let jump = jump_host_of(&state, &host)?;
@@ -229,7 +231,9 @@ pub async fn sftp_open(
 ) -> Result<String> {
     let host = {
         let vault = state.vault.lock()?;
-        vault.host(&host_id)?
+        let h = vault.host(&host_id)?;
+        // 把「密钥引用」解析成真实私钥内容（密钥库统一管理）
+        vault.materialize_host(&h)
     };
     let jump = jump_host_of(&state, &host)?;
     let opened = state.sftp.open(&session_id, &host, jump.as_ref()).await?;
@@ -360,6 +364,20 @@ pub fn local_rename(from: String, to: String) -> Result<()> {
 #[tauri::command]
 pub fn local_copy(from: String, to: String) -> Result<()> {
     localfs::copy(&from, &to)
+}
+
+// ---------------------------------------------------------------- 密钥库
+
+#[tauri::command]
+pub fn key_save(state: State<'_, AppState>, draft: SshKey) -> Result<SshKey> {
+    let mut vault = state.vault.lock()?;
+    vault.upsert_key(draft)
+}
+
+#[tauri::command]
+pub fn key_delete(state: State<'_, AppState>, id: String) -> Result<()> {
+    let mut vault = state.vault.lock()?;
+    vault.delete_key(&id)
 }
 
 // ---------------------------------------------------------------- 私钥导入
@@ -546,7 +564,9 @@ pub async fn forward_start(
 ) -> Result<ActiveForward> {
     let host = {
         let vault = state.vault.lock()?;
-        vault.host(&host_id)?
+        let h = vault.host(&host_id)?;
+        // 把「密钥引用」解析成真实私钥内容（密钥库统一管理）
+        vault.materialize_host(&h)
     };
     let jump = jump_host_of(&state, &host)?;
     let info = state
@@ -604,7 +624,9 @@ pub fn forward_stop(state: State<'_, AppState>, id: String) -> Result<()> {
 pub async fn forward_start_auto(state: State<'_, AppState>, host_id: String) -> Result<usize> {
     let host = {
         let vault = state.vault.lock()?;
-        vault.host(&host_id)?
+        let h = vault.host(&host_id)?;
+        // 把「密钥引用」解析成真实私钥内容（密钥库统一管理）
+        vault.materialize_host(&h)
     };
     let jump = jump_host_of(&state, &host)?;
     let rules: Vec<_> = host.forwards.iter().filter(|r| r.auto_start).cloned().collect();
@@ -662,7 +684,10 @@ fn jump_host_of(state: &AppState, host: &Host) -> Result<Option<Host>> {
         return Ok(None);
     }
     let vault = state.vault.lock()?;
-    Ok(vault.host(jump_id).ok())
+    Ok(vault
+        .host(jump_id)
+        .ok()
+        .map(|h| vault.materialize_host(&h)))
 }
 
 fn sync_state_of(vault: &VaultStore) -> SyncStateDto {

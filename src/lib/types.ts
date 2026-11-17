@@ -6,11 +6,25 @@ export interface AuthConfig {
   password?: string | null;
   /** 旧模式：本机私钥文件路径 */
   privateKeyPath?: string | null;
-  /** 推荐模式：私钥内容本身（存加密保险库、随云同步，跨机器可用） */
+  /** 推荐：引用密钥库里的密钥 id（内容由密钥库统一管理与同步） */
+  keyId?: string | null;
+  /** 兼容：私钥内容直接存在这条连接里 */
   privateKeyPem?: string | null;
   /** 私钥文件名，仅用于显示 */
   privateKeyName?: string | null;
   passphrase?: string | null;
+}
+
+/** 密钥库里的 SSH 密钥（全局资源，可被多条连接引用） */
+export interface SshKey {
+  id: string;
+  name: string;
+  content: string;
+  passphrase?: string | null;
+  keyType: string;
+  fingerprint: string;
+  updatedAt: number;
+  deleted: boolean;
 }
 
 /** 导入私钥文件后的信息 */
@@ -114,6 +128,7 @@ export interface VaultSnapshot {
   groups: GroupRecord[];
   serials: SerialProfile[];
   snippets: Snippet[];
+  keys: SshKey[];
   settings: AppSettings;
 }
 

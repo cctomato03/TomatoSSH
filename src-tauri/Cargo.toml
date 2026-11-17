@@ -1,6 +1,6 @@
 [package]
 name = "tomatossh"
-version = "1.0.8"
+version = "1.0.9"
 description = "TomatoSSH —— 跨平台 SSH / SFTP 桌面客户端"
 authors = ["TomatoSSH"]
 license = "MIT"

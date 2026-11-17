@@ -7,6 +7,7 @@ import { useVault } from "../store/useVault";
 import { api } from "../lib/api";
 import { Modal } from "./Modal";
 import { PasswordInput } from "./PasswordInput";
+import { KeysDialog } from "./KeysDialog";
 
 const empty = (groupId: string | null): HostDraft => ({
   label: "",
@@ -26,6 +27,8 @@ export function HostDialog() {
   const groups = useVault((s) => s.groups);
   const hosts = useVault((s) => s.hosts);
   const saveHost = useVault((s) => s.saveHost);
+  const keys = useVault((s) => s.keys);
+  const saveKey = useVault((s) => s.saveKey);
 
   const [form, setForm] = useState<HostDraft>(empty(null));
   const [tagText, setTagText] = useState("");
@@ -33,7 +36,7 @@ export function HostDialog() {
   const [saving, setSaving] = useState(false);
   /** 私钥存放方式：vault = 存进保险库（可云同步），path = 本机文件路径 */
   const [keyMode, setKeyMode] = useState<"vault" | "path">("vault");
-  const [keyInfo, setKeyInfo] = useState<string | null>(null);
+  const [keysOpen, setKeysOpen] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -52,19 +55,18 @@ export function HostDialog() {
         keepaliveSecs: host.keepaliveSecs,
       });
       setTagText(host.tags.join(", "));
-      setKeyMode(host.auth.privateKeyPem ? "vault" : "path");
-      setKeyInfo(null);
+      setKeyMode(host.auth.keyId || host.auth.privateKeyPem ? "vault" : "path");
     } else {
       setForm(empty(groupId));
       setTagText("");
       setKeyMode("vault");
-      setKeyInfo(null);
     }
   }, [open, host, groupId]);
 
   if (!open) return null;
 
   const patch = (p: Partial<HostDraft>) => setForm((f) => ({ ...f, ...p }));
+  const selectedKey = keys.find((k) => k.id === form.auth.keyId);
   const patchAuth = (p: Partial<HostDraft["auth"]>) => setForm((f) => ({ ...f, auth: { ...f.auth, ...p } }));
 
   const pickKey = async () => {
@@ -76,25 +78,25 @@ export function HostDialog() {
     if (typeof picked === "string") patchAuth({ privateKeyPath: picked });
   };
 
-  /** 导入私钥文件：读取内容存进保险库（跨机器可用的推荐方式） */
-  const importKey = async () => {
+  /** 把连接里私有保存的那份私钥，迁移成密钥库里的一条资源 */
+  const migrateToKeyLibrary = async () => {
     setError(null);
-    const picked = await openFileDialog({
-      multiple: false,
-      directory: false,
-      title: "选择 SSH 私钥文件（不是 .pub 公钥）",
-    });
-    if (typeof picked !== "string") return;
+    const content = (form.auth.privateKeyPem ?? "").trim();
+    if (!content) return;
     try {
-      const r = await api.importPrivateKey(picked, form.auth.passphrase ?? null);
-      patchAuth({ privateKeyPem: r.content, privateKeyName: r.name, privateKeyPath: null });
+      // 内容已经在手上，直接建成密钥库资源
+      const saved = await saveKey({
+        id: "",
+        name: form.auth.privateKeyName || "迁移的密钥",
+        content,
+        passphrase: form.auth.passphrase ?? null,
+        keyType: "",
+        fingerprint: "",
+        updatedAt: 0,
+        deleted: false,
+      });
+      patchAuth({ keyId: saved.id, privateKeyPem: null, privateKeyName: null, privateKeyPath: null });
       setKeyMode("vault");
-      setKeyInfo(
-        [r.keyType, r.fingerprint, r.encrypted ? "带口令" : null].filter(Boolean).join(" · "),
-      );
-      if (r.encrypted && !form.auth.passphrase) {
-        setError("该私钥已用口令加密，请在下方「私钥口令」里填写");
-      }
     } catch (e) {
       setError(String(e));
     }
@@ -106,9 +108,12 @@ export function HostDialog() {
     if (!form.username.trim()) return setError("请填写用户名");
     if (form.auth.type === "password" && !form.auth.password) return setError("请填写登录密码");
     if (form.auth.type === "privateKey") {
+      const hasKey = !!form.auth.keyId;
       const hasPem = !!(form.auth.privateKeyPem ?? "").trim();
       const hasPath = !!(form.auth.privateKeyPath ?? "").trim();
-      if (!hasPem && !hasPath) return setError("请导入私钥文件，或填写本机私钥路径");
+      if (!hasKey && !hasPem && !hasPath) {
+        return setError("请选择密钥库里的密钥（或填本机私钥路径）");
+      }
     }
 
     setSaving(true);
@@ -118,6 +123,7 @@ export function HostDialog() {
         // 只保存当前选择的来源，避免两套路径/内容同时存在造成歧义
         auth: {
           ...form.auth,
+          keyId: keyMode === "vault" ? (form.auth.keyId ?? null) : null,
           privateKeyPem: keyMode === "vault" ? form.auth.privateKeyPem : null,
           privateKeyName: keyMode === "vault" ? form.auth.privateKeyName : null,
           privateKeyPath: keyMode === "path" ? form.auth.privateKeyPath : null,
@@ -138,6 +144,7 @@ export function HostDialog() {
   };
 
   return (
+    <>
     <Modal
       title={host ? "编辑连接" : "新建连接"}
       onClose={close}
@@ -249,14 +256,14 @@ export function HostDialog() {
       ) : (
         <>
           <div className="field">
-            <label>私钥存放方式</label>
+            <label>私钥来源</label>
             <div className="seg">
               <button
                 className={keyMode === "vault" ? "on" : undefined}
                 onClick={() => setKeyMode("vault")}
-                title="私钥内容加密存进本机保险库，并随云同步到其它设备"
+                title="从密钥库里选一把密钥，一次导入多条连接复用，可云同步"
               >
-                存进保险库（推荐 · 可云同步）
+                密钥库（推荐 · 可云同步）
               </button>
               <button
                 className={keyMode === "path" ? "on" : undefined}
@@ -270,36 +277,45 @@ export function HostDialog() {
 
           {keyMode === "vault" ? (
             <div className="field">
-              <label>私钥内容（保存在加密保险库，随云同步，换电脑 / 换系统都能直接用）</label>
-              {(form.auth.privateKeyPem ?? "").trim() ? (
-                <div className="key-card">
-                  <span className="key-card-main">
-                    <b>{form.auth.privateKeyName || "已导入的私钥"}</b>
-                    <span className="hint">{keyInfo ?? "已保存在保险库"}</span>
-                  </span>
-                  <button className="btn ghost" onClick={importKey}>
-                    替换…
-                  </button>
-                  <button
-                    className="btn ghost"
-                    onClick={() => {
-                      patchAuth({ privateKeyPem: null, privateKeyName: null });
-                      setKeyInfo(null);
-                    }}
-                  >
-                    移除
+              <label>选择密钥</label>
+              <div style={{ display: "flex", gap: 6 }}>
+                <select
+                  value={form.auth.keyId ?? ""}
+                  onChange={(e) =>
+                    patchAuth({ keyId: e.target.value || null, privateKeyPem: null, privateKeyName: null })
+                  }
+                  style={{ flex: 1, minWidth: 0 }}
+                >
+                  <option value="">（选择密钥）</option>
+                  {keys.map((k) => (
+                    <option key={k.id} value={k.id}>
+                      {k.name}
+                      {k.keyType ? ` · ${k.keyType}` : ""}
+                      {k.passphrase ? " · 带口令" : ""}
+                    </option>
+                  ))}
+                </select>
+                <button className="btn" onClick={() => setKeysOpen(true)}>
+                  管理密钥…
+                </button>
+              </div>
+              {selectedKey ? (
+                <span className="hint">
+                  {[selectedKey.keyType, selectedKey.fingerprint].filter(Boolean).join(" · ")}
+                </span>
+              ) : keys.length === 0 ? (
+                <span className="hint">
+                  密钥库还是空的 —— 点「管理密钥…」导入一次，之后所有连接都能直接选它
+                </span>
+              ) : null}
+              {(form.auth.privateKeyPem ?? "").trim() && !form.auth.keyId ? (
+                <div className="hint" style={{ color: "var(--warning)" }}>
+                  这条连接仍然保存着一份「独立私钥」。
+                  <button className="btn ghost" style={{ marginLeft: 6 }} onClick={migrateToKeyLibrary}>
+                    迁移到密钥库
                   </button>
                 </div>
-              ) : (
-                <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-                  <button className="btn primary" onClick={importKey}>
-                    <FileKey size={13} /> 导入私钥文件…
-                  </button>
-                  <span className="hint">
-                    导入的是文件内容（不是路径），会一起加密同步到你的其它设备
-                  </span>
-                </div>
-              )}
+              ) : null}
             </div>
           ) : (
             <div className="field">
@@ -316,7 +332,7 @@ export function HostDialog() {
                 </button>
               </div>
               <span className="hint">
-                路径只在本机有效，换电脑/换系统后需要重新选择（推荐上面的保险库方式）
+                路径只在本机有效，换电脑/换系统后需要重新选择（推荐用密钥库那套）
               </span>
             </div>
           )}
@@ -396,5 +412,8 @@ export function HostDialog() {
         </div>
       )}
     </Modal>
+
+    {keysOpen && <KeysDialog onClose={() => setKeysOpen(false)} />}
+    </>
   );
 }

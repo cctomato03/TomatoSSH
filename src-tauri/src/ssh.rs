@@ -733,4 +733,65 @@ QR+u0AypRPmzHnOPAAAAEXJvb3RAMTQwOTExNTQ5NDBkAQ==
             );
         });
     }
+
+    /// 通过「密钥库」引用登录：连接里只有 key_id，内容是加载时从保险库解析出来的。
+    #[test]
+    fn authenticates_via_key_library() {
+        let Ok(addr) = std::env::var("TOMATO_TEST_SSH") else {
+            eprintln!("跳过密钥库登录测试：未设置 TOMATO_TEST_SSH");
+            return;
+        };
+        let port: u16 = addr.rsplit(':').next().unwrap().parse().expect("端口");
+
+        let dir = std::env::temp_dir().join(format!("tsklib-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut vault = crate::vault::VaultStore::open(&dir).expect("打开保险库");
+        let key = vault
+            .upsert_key(crate::models::SshKey {
+                id: String::new(),
+                name: "e2e 通用密钥".into(),
+                content: KEY_CONTENT.to_string(),
+                passphrase: None,
+                key_type: "RSA".into(),
+                fingerprint: String::new(),
+                ..Default::default()
+            })
+            .expect("保存密钥");
+
+        let host = Host {
+            id: "kl".into(),
+            label: "kl".into(),
+            host: "127.0.0.1".into(),
+            port,
+            username: "root".into(),
+            auth: AuthConfig {
+                kind: AUTH_KEY.into(),
+                key_id: Some(key.id.clone()),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        // 关键：连接里没有私钥内容，只有引用
+        assert!(host.auth.private_key_pem.is_none());
+        let materialized = vault.materialize_host(&host);
+        assert!(materialized.auth.private_key_pem.is_some());
+
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(async move {
+            let outcome = connect_and_auth(&materialized).await.expect("用密钥库密钥登录");
+            let mut channel = outcome.handle.channel_open_session().await.expect("打开通道");
+            channel.exec(true, "echo TOMATO_KEYLIB_OK").await.expect("执行");
+            let mut out = Vec::new();
+            while let Some(msg) = channel.wait().await {
+                match msg {
+                    ChannelMsg::Data { data } => out.extend_from_slice(&data),
+                    ChannelMsg::Close | ChannelMsg::Eof => break,
+                    _ => {}
+                }
+            }
+            let text = String::from_utf8_lossy(&out);
+            assert!(text.contains("TOMATO_KEYLIB_OK"), "实际输出：{text}");
+        });
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }

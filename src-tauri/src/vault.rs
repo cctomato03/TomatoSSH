@@ -5,7 +5,8 @@ use serde::{Deserialize, Serialize};
 use crate::crypto;
 use crate::error::{Error, Result};
 use crate::models::{
-    now_ms, Group, GroupDraft, Host, HostDraft, SerialProfile, Snippet, Snapshot, VaultData,
+    now_ms, Group, GroupDraft, Host, HostDraft, SerialProfile, Snippet, Snapshot, SshKey, VaultData,
+    AUTH_KEY,
 };
 
 /// 参与云同步的载荷（不含本机密钥，连接密码在整包加密之内）
@@ -16,6 +17,7 @@ pub struct SyncPayload {
     pub groups: Vec<Group>,
     pub serials: Vec<SerialProfile>,
     pub snippets: Vec<Snippet>,
+    pub keys: Vec<SshKey>,
     pub updated_at: i64,
 }
 
@@ -82,11 +84,14 @@ impl VaultStore {
                 .cmp(&b.group.to_lowercase())
                 .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
         });
+        let mut keys: Vec<SshKey> = self.data.keys.iter().filter(|k| !k.deleted).cloned().collect();
+        keys.sort_by_key(|k| k.name.to_lowercase());
         Snapshot {
             hosts,
             groups,
             serials,
             snippets,
+            keys,
             settings: self.data.settings.clone(),
         }
     }
@@ -240,6 +245,78 @@ impl VaultStore {
         self.save()
     }
 
+    pub fn upsert_key(&mut self, mut draft: SshKey) -> Result<SshKey> {
+        if draft.name.trim().is_empty() {
+            return Err(Error::msg("密钥名称不能为空"));
+        }
+        if draft.content.trim().is_empty() {
+            return Err(Error::msg("密钥内容不能为空"));
+        }
+        let now = now_ms();
+        draft.name = draft.name.trim().to_string();
+        match self
+            .data
+            .keys
+            .iter_mut()
+            .find(|k| k.id == draft.id && !k.id.is_empty())
+        {
+            Some(existing) => {
+                draft.updated_at = now;
+                draft.deleted = false;
+                *existing = draft.clone();
+            }
+            None => {
+                draft.id = uuid::Uuid::new_v4().to_string();
+                draft.updated_at = now;
+                draft.deleted = false;
+                self.data.keys.push(draft.clone());
+            }
+        }
+        self.save()?;
+        Ok(draft)
+    }
+
+    pub fn delete_key(&mut self, id: &str) -> Result<()> {
+        let now = now_ms();
+        for k in self.data.keys.iter_mut() {
+            if k.id == id {
+                k.deleted = true;
+                k.updated_at = now;
+            }
+        }
+        self.save()
+    }
+
+    /// 取一把未删除的密钥
+    pub fn key(&self, id: &str) -> Result<SshKey> {
+        self.data
+            .keys
+            .iter()
+            .find(|k| k.id == id && !k.deleted)
+            .cloned()
+            .ok_or_else(|| Error::msg("所选密钥不存在或已被删除（请到「密钥库」里重新选择）"))
+    }
+
+    /// 把连接里的「密钥引用」解析成真实的私钥内容/口令，
+    /// 供 SSH / SFTP / 端口转发 / 传输队列统一使用。
+    pub fn materialize_host(&self, host: &Host) -> Host {
+        let mut h = host.clone();
+        if h.auth.kind != AUTH_KEY {
+            return h;
+        }
+        let Some(key_id) = h.auth.key_id.as_deref().map(str::trim).filter(|s| !s.is_empty()) else {
+            return h;
+        };
+        if let Ok(key) = self.key(key_id) {
+            h.auth.private_key_pem = Some(key.content);
+            h.auth.private_key_name = Some(key.name.clone());
+            // 连接上单独填了口令则以连接为准，否则用密钥库里存的
+            if h.auth.passphrase.as_deref().unwrap_or("").trim().is_empty() {
+                h.auth.passphrase = key.passphrase;
+            }
+        }
+        h
+    }
     pub fn upsert_snippet(&mut self, mut draft: Snippet) -> Result<Snippet> {
         if draft.name.trim().is_empty() {
             return Err(Error::msg("快捷指令名称不能为空"));
@@ -360,6 +437,7 @@ impl VaultStore {
             groups: self.data.groups.clone(),
             serials: self.data.serials.clone(),
             snippets: self.data.snippets.clone(),
+            keys: self.data.keys.clone(),
             updated_at: now_ms(),
         }
     }
@@ -393,6 +471,21 @@ impl VaultStore {
                 }
                 None => {
                     self.data.groups.push(rg);
+                    changed += 1;
+                }
+            }
+        }
+
+        for rk in remote.keys {
+            match self.data.keys.iter_mut().find(|k| k.id == rk.id) {
+                Some(local) => {
+                    if rk.updated_at > local.updated_at {
+                        *local = rk;
+                        changed += 1;
+                    }
+                }
+                None => {
+                    self.data.keys.push(rk);
                     changed += 1;
                 }
             }
@@ -456,4 +549,98 @@ fn load_or_create_key(dir: &Path) -> Result<[u8; 32]> {
         let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600));
     }
     Ok(key)
+}
+
+#[cfg(test)]
+mod key_library_tests {
+    use super::*;
+    use crate::models::{AuthConfig, AUTH_KEY};
+
+    fn temp_vault() -> (VaultStore, std::path::PathBuf) {
+        let dir = std::env::temp_dir().join(format!("tsvault-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).expect("建临时目录");
+        let vault = VaultStore::open(&dir).expect("打开保险库");
+        (vault, dir)
+    }
+
+    fn sample_key(content: &str) -> SshKey {
+        SshKey {
+            id: String::new(),
+            name: "通用密钥".into(),
+            content: content.into(),
+            passphrase: Some("pp".into()),
+            key_type: "ED25519".into(),
+            fingerprint: "SHA256:abc".into(),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn materializes_key_reference_into_host() {
+        let (mut vault, dir) = temp_vault();
+        let key = vault.upsert_key(sample_key("PEM-DATA")).expect("保存密钥");
+        let host = Host {
+            id: "h1".into(),
+            host: "1.2.3.4".into(),
+            username: "root".into(),
+            auth: AuthConfig {
+                kind: AUTH_KEY.into(),
+                key_id: Some(key.id.clone()),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let m = vault.materialize_host(&host);
+        assert_eq!(m.auth.private_key_pem.as_deref(), Some("PEM-DATA"));
+        assert_eq!(m.auth.private_key_name.as_deref(), Some("通用密钥"));
+        assert_eq!(m.auth.passphrase.as_deref(), Some("pp"), "应带上密钥库里的口令");
+
+        // 连接自己填了口令 → 以连接为准
+        let mut own = host.clone();
+        own.auth.passphrase = Some("own".into());
+        assert_eq!(vault.materialize_host(&own).auth.passphrase.as_deref(), Some("own"));
+
+        // 引用不存在的密钥 → 不填充，交给连接时报错
+        let mut missing = host.clone();
+        missing.auth.key_id = Some("not-exist".into());
+        assert!(vault.materialize_host(&missing).auth.private_key_pem.is_none());
+
+        // 密码认证不受影响
+        let mut pw = host.clone();
+        pw.auth.kind = "password".into();
+        assert!(vault.materialize_host(&pw).auth.private_key_pem.is_none());
+
+        // 多条连接共用同一把密钥
+        let host2 = Host { id: "h2".into(), ..host.clone() };
+        assert_eq!(
+            vault.materialize_host(&host2).auth.private_key_pem.as_deref(),
+            Some("PEM-DATA")
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn deleting_key_hides_it_from_snapshot() {
+        let (mut vault, dir) = temp_vault();
+        let key = vault.upsert_key(sample_key("PEM")).expect("保存密钥");
+        assert_eq!(vault.snapshot().keys.len(), 1);
+        vault.delete_key(&key.id).expect("删除");
+        assert!(vault.snapshot().keys.is_empty());
+        assert!(vault.key(&key.id).is_err());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn key_requires_name_and_content() {
+        let (mut vault, dir) = temp_vault();
+        let mut k = sample_key("PEM");
+        k.name = "  ".into();
+        assert!(vault.upsert_key(k).is_err());
+        let mut k2 = sample_key("   ");
+        k2.name = "ok".into();
+        assert!(vault.upsert_key(k2).is_err());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }

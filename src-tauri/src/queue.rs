@@ -311,7 +311,8 @@ impl TransferQueue {
             .vault
             .lock()
             .map_err(|_| Error::msg("保险库锁错误"))?;
-        vault.host(host_id)
+        let h = vault.host(host_id)?;
+        Ok(vault.materialize_host(&h))
     }
 
     async fn session_for(&self, job_id: &str, role: &str, host_id: &str) -> Result<String> {
