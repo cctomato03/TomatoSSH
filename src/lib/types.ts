@@ -252,6 +252,8 @@ export interface TabRecord {
   hostId: string | null;
   /** 串口连接配置 id（kind === "serial" 时使用） */
   serialId?: string | null;
+  /** 同一个连接的第几个会话（1 = 第一个，用于同名连接多开时区分） */
+  ordinal?: number;
   status: "connecting" | "connected" | "closed" | "error";
   error?: string | null;
   cwd?: string | null;

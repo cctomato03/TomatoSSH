@@ -25,7 +25,7 @@ export function TabBar() {
             onAuxClick={(e) => {
               if (e.button === 1) closeTab(tab.id);
             }}
-            title={host ? `${host.username}@${host.host}` : tab.title}
+            title={`${host ? `${host.username}@${host.host}` : tab.title}${(tab.ordinal ?? 1) > 1 ? `（第 ${tab.ordinal} 个会话）` : ""}`}
           >
             {tab.kind === "local" ? (
               <TerminalSquare size={14} />
@@ -34,7 +34,7 @@ export function TabBar() {
             ) : (
               <FolderTree size={14} />
             )}
-            <span className="tab-title">{tab.title}</span>
+            <span className="tab-title">\n              {tab.title}\n              {(tab.ordinal ?? 1) > 1 ? ` #${tab.ordinal}` : ""}\n            </span>
             {tab.status === "connecting" && <span className="dot idle" />}
             {tab.status === "connected" && <span className="dot online" />}
             {tab.status === "error" && <span className="dot error" />}

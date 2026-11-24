@@ -3,6 +3,7 @@ import {
   Cable,
   ChevronDown,
   Waypoints,
+  X,
   ChevronRight,
   FolderClosed,
   FolderOpen,
@@ -67,6 +68,8 @@ export function Sidebar() {
   );
   const [forwardHostId, setForwardHostId] = useState<string | null>(null);
   const [keysOpen, setKeysOpen] = useState(false);
+  /** 记录每个主机上一次开session的时间，避免双击被当成两次"多开" */
+  const lastOpenRef = useRef(new Map<string, number>());
 
   const activeHostIds = useMemo(
     () => new Set(tabs.filter((t) => t.kind === "ssh" && t.hostId).map((t) => t.hostId as string)),
@@ -135,11 +138,17 @@ export function Sidebar() {
       api.openFileManager(host.id).catch((e) => console.error(e));
       return;
     }
-    const existing = tabs.find((t) => t.kind === "ssh" && t.hostId === host.id && t.status !== "error");
-    if (existing) {
-      useTabs.getState().setActive(existing.id);
-      return;
+    // 同一连接可以同时开多个会话（多标签并行）；600ms 内的重复触发视为误双击，直接复用
+    const now = Date.now();
+    const last = lastOpenRef.current.get(host.id) ?? 0;
+    if (now - last < 600) {
+      const recent = tabs.filter((t) => t.kind === "ssh" && t.hostId === host.id).pop();
+      if (recent) {
+        useTabs.getState().setActive(recent.id);
+        return;
+      }
     }
+    lastOpenRef.current.set(host.id, now);
     openSshTab(host);
   };
 
@@ -168,13 +177,26 @@ export function Sidebar() {
       x,
       y,
       items: [
-        { label: "连接", icon: <Play size={14} />, onClick: () => connect(host) },
+        { label: "新开一个终端会话", icon: <Play size={14} />, onClick: () => connect(host) },
         { label: "在文件管理器中打开", icon: <FolderOpen size={14} />, onClick: () => connect(host, true) },
         {
           label: "端口转发…",
           icon: <Waypoints size={14} />,
           onClick: () => setForwardHostId(host.id),
         },
+        ...(tabs.filter((x) => x.kind === "ssh" && x.hostId === host.id).length > 1
+          ? [
+              {
+                label: "关闭该连接的所有会话",
+                icon: <X size={14} />,
+                onClick: () => {
+                  for (const t of tabs.filter((x) => x.kind === "ssh" && x.hostId === host.id)) {
+                    useTabs.getState().closeTab(t.id);
+                  }
+                },
+              },
+            ]
+          : []),
         { kind: "sep" },
         {
           label: "编辑",

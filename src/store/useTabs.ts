@@ -21,11 +21,20 @@ export const useTabs = create<TabsState>((set, get) => ({
 
   openSshTab(host) {
     const id = uid();
+    // 同一连接允许多开：序号取该主机现有会话的最大序号 +1
+    const ordinal =
+      Math.max(
+        0,
+        ...get()
+          .tabs.filter((t) => t.kind === "ssh" && t.hostId === host.id)
+          .map((t) => t.ordinal ?? 1),
+      ) + 1;
     const tab: TabRecord = {
       id,
       kind: "ssh",
       title: host.label || `${host.username}@${host.host}`,
       hostId: host.id,
+      ordinal,
       status: "connecting",
     };
     set((s) => ({ tabs: [...s.tabs, tab], activeId: id }));
